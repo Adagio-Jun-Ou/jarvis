@@ -17,7 +17,7 @@ bcrypt>=4.0.0
 fastapi>=0.100.0
 uvicorn>=0.23.0
 websockets>=11.0
-python-multipart>=0.0.6   # required by FastAPI Form(...) — /api/chat 500s without it
+python-multipart>=0.0.32   # required by FastAPI Form(...) — /api/chat 500s without it
 aiofiles>=23.0.0          # async file IO in tools/base.py
 
 # System
