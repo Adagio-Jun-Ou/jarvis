@@ -1,0 +1,70 @@
+{
+  "spark_version": {
+    "type": "regex",
+    "pattern": "1[3-9]\\..*"
+  },
+  "num_workers": {
+    "type": "fixed",
+    "value": 0
+  },
+  "node_type_id": {
+    "type": "allowlist",
+    "values": ["m6i.xlarge", "m6i.2xlarge"],
+    "defaultValue": "m6i.xlarge"
+  },
+  "data_security_mode": {
+    "type": "fixed",
+    "value": "SINGLE_USER",
+    "hidden": true
+  },
+  "single_user_name": {
+    "type": "fixed",
+    "value": "sp-alex-agent",
+    "dependsOn": ["data_security_mode"],
+    "hidden": true
+  },
+  "autotermination_minutes": {
+    "type": "range",
+    "minValue": 5,
+    "maxValue": 20,
+    "defaultValue": 10
+  },
+  "enable_elastic_disk": {
+    "type": "fixed",
+    "value": true
+  },
+  "runtime_engine": {
+    "type": "fixed",
+    "value": "STANDARD"
+  },
+  "aws_attributes": {
+    "type": "fixed",
+    "value": {
+      "instance_profile_arn": "arn:aws:iam::${var.AWS_ACCOUNT_ID}:instance-profile/alex-agent-vm-minimal",
+      "availability": "ON_DEMAND",
+      "spot_bid_price_percent": null,
+      "ebs_volume_type": "GENERAL_PURPOSE_SSD",
+      "ebs_volume_count": 1,
+      "ebs_volume_size": 100
+    },
+    "hidden": true
+  },
+  "spark_conf.spark.databricks.repl.allowedLanguages": {
+    "type": "fixed",
+    "value": "python"
+  },
+  "init_scripts": {
+    "type": "forbidden"
+  },
+  "custom_tags.team": {
+    "type": "fixed",
+    "value": "alex-platform"
+  },
+  "custom_tags.env": {
+    "type": "fixed",
+    "value": "${var.environment}"
+  },
+  "policy_id": "alex-agent-sandbox-v1",
+  "policy_name": "Alex agent sandbox cluster policy",
+  "description": "Single-user policy for the agent's workspace VM. No init scripts; no internet by default; only the agent SP may use it. Network egress is enforced by the VPC firewall and instance profile, not by this policy alone."
+}

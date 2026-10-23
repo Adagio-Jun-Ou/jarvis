@@ -1,0 +1,28 @@
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+   -----------------------------------------------------------------------------
+
+   The files in this directory are an adapted subset of the public
+   Omnigent project (https://github.com/omnigent-ai/omnigent), Apache-2.0.
+   The upstream copyright is held by the Omnigent authors.  Adaptations
+   in this directory (callable compatibility for our existing
+   `alex.llm.OllamaCloudLLM` and `alex.llm.DatabricksServingLLM`,
+   dependency on MLflow instead of OpenTelemetry, removal of the
+   databricks-sdk / ~/.databrickscfg / sandbox / bwrap / seatbelt
+   surfaces that Alex does not need, and the addition of
+   `_alex_bridge.py`) are Copyright (c) the Alex 2.0 authors and
+   licensed under the same Apache-2.0 terms.

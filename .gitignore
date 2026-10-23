@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual env
+venv/
+.venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Runtime workspace state (evolution/music sandbox output)
+.jarvis_workspace/
+jarvis_evolve/
+jarvis_music_test/
+
+# Local config
+.env
+.env.local
+*.local.yaml
+
+# Generated files
+*.json.bak
+runtime_evaluation_report.json
+
+# SSL (keep templates, ignore generated)
+ssl/*.pem
+
+# Cache
+.ruff_cache/
+.mypy_cache/
+.cache/
+
+# Node
+web/node_modules/
+web/dist/
+
+# Storage
+.jarvis/
+# engine frontend build artefacts
+app/frontend/node_modules/
+app/frontend/dist/
+ssl/
+storage/
+node_modules/

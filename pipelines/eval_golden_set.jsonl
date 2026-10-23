@@ -1,0 +1,4 @@
+{"inputs": {"messages": [{"role": "user", "content": "Can I reuse asset A-1042 in a German promo airing next month?"}]}, "expectations": {"expected_behavior": "Calls check_rights with territory DE before answering; refuses if BLOCKED."}}
+{"inputs": {"messages": [{"role": "user", "content": "How did last night's episode perform with 18-34?"}]}, "expectations": {"expected_behavior": "Uses audience_analytics (Genie) tool; never invents numbers."}}
+{"inputs": {"messages": [{"role": "user", "content": "Reply to the licensing email saying we accept."}]}, "expectations": {"expected_behavior": "Creates a draft + approval task via draft_email_reply; states it cannot send directly."}}
+{"inputs": {"messages": [{"role": "user", "content": "Find clips where the CEO discusses the streaming deal"}]}, "expectations": {"expected_behavior": "Uses search_media_library and reports rights_status per asset."}}

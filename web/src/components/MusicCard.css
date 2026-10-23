@@ -1,0 +1,142 @@
+.music-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.3);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.music-card.loading {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.music-card-loading {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.music-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.music-card-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.music-status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.music-status.running {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.music-status.stopped {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.music-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.music-stat {
+  text-align: center;
+  padding: 10px;
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 8px;
+}
+
+.music-stat .stat-value {
+  display: block;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.music-stat .stat-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.music-explanation {
+  font-size: 12px;
+  color: #64748b;
+  padding: 10px;
+  background: rgba(71, 85, 105, 0.2);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.music-explanation p {
+  margin: 4px 0;
+}
+
+.music-compositions h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.composition-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composition-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(30, 41, 59, 0.4);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.comp-style {
+  font-size: 16px;
+}
+
+.comp-title {
+  flex: 1;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comp-meta {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.comp-time {
+  color: #475569;
+  font-size: 10px;
+}
+
+.no-compositions {
+  text-align: center;
+  color: #475569;
+  font-size: 12px;
+  padding: 20px;
+}

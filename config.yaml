@@ -1,0 +1,246 @@
+# Jarvis Configuration - Multi-model setup
+
+# Primary LLM (GLM-5.3-Flash for interactive/chat via Ollama Cloud).
+# "flash" = the fast/low-latency tier: chat, creative, user-facing, vision.
+llm:
+  model: "glm-5.3-flash"
+  host: "http://localhost:11434"
+  temperature: 0.7
+  use_cloud: true
+  api_key: null  # Set via OLLAMA_API_KEY environment variable
+  vision_model: null  # Use separate vision model if needed (primary itself is vision-capable)
+  fallback_models: ["kimi-k2.7-code", "qwen3.5:397b"]
+  timeout: 120
+  stream_timeout: 300
+
+# Backend LLM (Kimi-K2.7-Code for code, math, analysis, refinement)
+backend_llm:
+  model: "kimi-k2.7-code"
+  use_cloud: true
+  api_key: null  # Set via OLLAMA_API_KEY environment variable
+  fallback_models: ["glm-5.3-flash", "glm-5.1"]  # Primary model takes over if backend fails
+  temperature: 0.3  # Lower for code/analysis tasks
+  timeout: 180
+
+# Concept LLM (for meta-reasoning, abstractions, cross-domain patterns)
+# Uses backend_llm as fallback if not configured
+# Suitable models: DeepSeek-R1, QwQ, or any reasoning-focused model
+concept_llm:
+  model: "kimi-k2.7-code"  # Follows backend; change to "deepseek-r1" for dedicated concept model
+  use_cloud: true
+  api_key: null  # Set via OLLAMA_API_KEY environment variable
+  temperature: 0.5  # Moderate - creative but focused
+  timeout: 300  # Longer for complex reasoning
+  enabled: true  # Set to false to disable concept layer
+  
+  # Concept embedding settings
+  #
+  # NOTE: this block is NOT read. ConceptLLMConfig declares no `embedding`
+  # field, so these keys are silently dropped and the constants in
+  # core/concept_model.py are authoritative. Documented here to match what
+  # actually runs; change the module constants, not this block.
+  #
+  #   model:          jinaai/jina-embeddings-v5-text-nano  (~239M params)
+  #   dim:            768 (Matryoshka)
+  #   max_seq_length: 8192 tokens
+  #   task:           retrieval
+  #   multilingual:   yes — cross-language paraphrases align at ~0.80-0.91
+  #   requires:       peft (without it encode() degrades to ZERO VECTORS)
+  embedding:
+    model: "jinaai/jina-embeddings-v5-text-nano"
+    provider: "pytorch"  # "pytorch", "onnx" (fast CPU), "ov" (OpenVINO for NPU)
+    max_seq_length: 8192  # Supports full LLM thought outputs
+    cache_size: 2000  # Number of embeddings to cache
+  
+  # Embedding IPC Server (for parallel agent support)
+  embedding_server:
+    enabled: true  # Use shared embedding server for all processes
+    socket_path: "/tmp/jarvis_embedding.sock"
+    model: "jinaai/jina-embeddings-v5-text-nano"  # Fast, lightweight
+    fallback_to_local: true  # Fall back to in-process if server unavailable
+
+# Permission Settings (Opencode-style)
+permissions:
+  # Default behavior for different action types
+  shell_commands: "ask"      # ask, allow, deny
+  file_delete: "ask"
+  file_write: "ask"
+  file_read: "allow"         # Safe to read files
+  web_access: "allow"
+  
+  # Self-modification permissions (for self-refine)
+  self_edit:
+    enabled: true
+    require_confirmation: true  # Always ask before code changes
+    safe_files_only: true      # Only allow edits to SAFE_FILES list
+    auto_test: true            # Run tests after edits
+    max_lines_per_edit: 100    # Safety limit
+  
+  # Autonomous actions
+  autonomous:
+    background_tasks: "allow"    # Learning, Erdős, daydream
+    tool_execution: "ask"        # Ask before running tools
+    web_requests: "allow"        # Allow web fetch/search
+  
+  # Code modification permissions
+  code_modification:
+    read_access: "allow"         # Can read any code
+    write_access: "ask"          # Ask before writing
+    safe_dirs:                   # Directories safe to modify
+      - "core/erdos_engine.py"
+      - "core/insight_bridge.py"
+      - "core/evolution_orchestrator.py"
+      - "core/daydream_engine.py"
+      - "tools/evolution_tools.py"
+
+# Memory
+memory:
+  enabled: true
+  max_context_tokens: null  # null = dynamic, adapts to conversation needs
+  long_term_storage: "~/.jarvis/memory"
+  # Unified Memory Configuration
+  unified:
+    max_conversation: 100      # Max conversation messages
+    max_working: 50            # Max working memory entries
+    max_episodic: 500          # Max event sequences
+    max_insight: 1000          # Max learned patterns
+    consolidation_threshold: 0.7  # Importance for long-term storage
+  # Vector Memory (HNSW)
+  vector:
+    enabled: true
+    max_vectors: 10000
+    similarity_threshold: 0.75
+  # Knowledge Graph
+  knowledge_graph:
+    enabled: true
+    max_nodes: 10000
+    max_edges: 50000
+  # Context Compression
+  compression:
+    enabled: true
+    strategy: "balanced"  # aggressive, balanced, conservative
+    active_limit: 12000   # Active context token limit
+    compressed_limit: 24000  # Compressed context limit
+    archive_threshold: 100   # Messages before archiving
+  # Proactive Summarization
+  proactive_summarize:
+    enabled: true
+    threshold: 0.50      # Fraction of context to trigger (50%)
+    min_messages: 10     # Minimum messages before summarizing
+
+# Tools
+tools:
+  web_search:
+    enabled: true
+    provider: "duckduckgo"
+  system:
+    enabled: true
+    sandbox_dir: "~"
+
+# Interface
+interface:
+  default: "web"  # cli, voice, web
+  web_port: 8080
+  
+  # Tailscale mesh network configuration
+  tailscale:
+    enabled: true
+    # Access URLs (auto-detected from Tailscale):
+    # - Local: https://localhost:8080
+    # - Tailscale IP: https://203.0.113.10:8080
+    # - Funnel (public): https://your-host.your-tailnet.ts.net
+    hostname: "your-host"
+    tailnet: "your-tailnet.ts.net"
+    funnel_enabled: true  # Public access via Tailscale Funnel
+
+# Proactive Thinking Settings
+thinking:
+  enabled: true
+  mode: "supportive"  # supportive, analytical, creative
+  suggestion_interval: 30  # seconds between background thinking
+  confidence_threshold: 0.7  # minimum confidence to suggest
+  max_suggestions_per_turn: 3
+  pause_detection: true  # detect natural conversation pauses
+
+# Dynamic Context
+context:
+  max_tokens: null  # null = use model's maximum
+  history_strategy: "smart"  # smart, recent, summarized, semantic
+  importance_tracking: true  # track important topics
+
+# Automation Tools
+automation:
+  docker:
+    enabled: true
+    socket: "/var/run/docker.sock"
+  n8n:
+    enabled: true
+    url: "http://localhost:5678"
+    api_key: null  # Set via N8N_API_KEY env var
+
+# Identity Settings
+identity:
+  name: "Jarvis"
+  voice_engine: "auto"  # auto, pyttsx3, espeak, neural
+  voice_id: null  # Specific voice ID or name
+  voice_rate: 180
+  voice_pitch: 1.0
+
+# Free Time Exploration - Sandbox for autonomous exploration
+free_time:
+  enabled: true
+  idle_fraction: 0.07  # 1/14 of idle time for exploration
+  max_session_minutes: 10
+  requires_permission: true  # Must grant permission via API
+  sandbox_type: "subprocess"  # subprocess, docker, firejail
+  allowed_languages:
+    - "python"
+    - "bash"
+    - "javascript"
+  enable_network: false  # No network access in sandbox
+  auto_save_insights: true  # Save interesting findings
+
+# Dual-Model Architecture Configuration
+# Dual-model architecture summary — INFORMATIONAL ONLY.
+# The authoritative model ids come from llm.model (primary) and
+# backend_llm.model (backend); core/dual_model.py and core/model_coordinator.py
+# resolve their display/routing ids from the live clients at startup.
+# This block documents the role split for humans and is not read by Config.
+dual_model:
+  enabled: true
+  primary_model: "glm-5.3-flash"   # Chat, creative, user-facing (fast tier)
+  backend_model: "kimi-k2.7-code"  # Code, math, reasoning, analysis
+  # Task routing - which model handles which tasks
+  routing:
+    chat: "primary"
+    creative: "primary"
+    code: "backend"
+    math: "backend"
+    analysis: "backend"
+    reasoning: "backend"
+    refinement: "backend"
+    verification: "backend"
+    thinking: "backend"
+  # Cross-model collaboration settings
+  collaboration:
+    enabled: true
+    max_rounds: 2  # Rounds in think_together()
+    share_context: true  # Models share context through coordinator
+
+# Security Settings
+security:
+  require_auth: false  # Set to true to enable API key authentication
+  api_key: null        # Set via JARVIS_API_KEY environment variable
+  session_timeout_minutes: 60
+  max_failed_attempts: 5
+  lockout_duration_minutes: 15
+  # Per-IP request cap, enforced by SecurityMiddleware as a sliding window
+  # (loopback is exempt). The web dashboard polls aggressively (the flow
+  # visualization alone polls at 200ms = 300 req/min), so 120 — the old,
+  # never-enforced value — would 429 the UI. Lower this to tighten remote
+  # access; the per-endpoint limits in core/rate_limiter.py still apply
+  # on top of it.
+  rate_limit_requests_per_minute: 2000
+  max_request_size_mb: 10
+  xss_protection: true
+  csrf_protection: true

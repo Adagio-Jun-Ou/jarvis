@@ -1,0 +1,97 @@
+{
+  "_comment": [
+    "Golden set for the enterprise retrieval path, keyed against the",
+    "corpus seeded by app/_dev_seed.py. Documents are named by their",
+    "source_ref because that is what a person writes down; doc_ids are",
+    "content-derived and change when a document is edited.",
+    "",
+    "`kind` slices the report: an average can improve while one class of",
+    "query gets worse, and that is the regression that reaches users.",
+    "`forbidden` cases assert an access-control or disambiguation",
+    "boundary — retrieving one of those is a different, worse failure",
+    "than missing a wanted document."
+  ],
+  "cases": [
+    {
+      "query": "what is the Atlas budget and deadline?",
+      "expected": ["wiki/atlas-brief"],
+      "kind": "factoid",
+      "note": "Headline case: a specific number in a specific document."
+    },
+    {
+      "query": "who owns Project Atlas?",
+      "expected": ["wiki/atlas-brief"],
+      "kind": "factoid"
+    },
+    {
+      "query": "what is the main risk to Project Atlas?",
+      "expected": ["wiki/atlas-brief"],
+      "kind": "factoid"
+    },
+    {
+      "query": "can I expense a flight booked next week?",
+      "expected": ["wiki/expenses-policy"],
+      "kind": "policy",
+      "note": "Paraphrase — the policy says 'fourteen days in advance'."
+    },
+    {
+      "query": "do I need approval for a 90 dollar receipt?",
+      "expected": ["wiki/expenses-policy"],
+      "kind": "policy"
+    },
+    {
+      "query": "the invoice sync is failing, what do I do?",
+      "expected": ["wiki/billing-runbook"],
+      "kind": "operational",
+      "note": "No shared vocabulary with the runbook title."
+    },
+    {
+      "query": "dead-letter queue",
+      "expected": ["wiki/billing-runbook"],
+      "kind": "exact-match",
+      "note": "Exact phrase in one document only. RRF systematically under-weights single-list hits, so this is the case the lexical pin slots exist for."
+    },
+    {
+      "query": "Vertex API",
+      "expected": ["wiki/billing-runbook", "wiki/atlas-brief", "wiki/northwind"],
+      "kind": "exact-match",
+      "note": "A term appearing in three documents — tests multi-document recall."
+    },
+    {
+      "query": "Northwind renewal risk",
+      "expected": ["wiki/northwind"],
+      "kind": "factoid"
+    },
+    {
+      "query": "which customer has open P1 incidents?",
+      "expected": ["wiki/northwind"],
+      "kind": "multi-hop",
+      "note": "Requires connecting 'P1 incidents' to the customer record."
+    },
+    {
+      "query": "what depends on the Vertex API and why does it matter?",
+      "expected": ["wiki/atlas-brief", "wiki/billing-runbook"],
+      "kind": "multi-hop",
+      "note": "The graph edge Project Atlas -> depends_on -> Vertex API is the connection."
+    },
+    {
+      "query": "how many engineers are on Atlas and are they shared?",
+      "expected": ["wiki/atlas-brief"],
+      "kind": "factoid"
+    },
+    {
+      "query": "engineering salary bands for FY26",
+      "expected": [],
+      "forbidden": ["wiki/comp-bands"],
+      "kind": "access-control",
+      "note": "Restricted. A manager must not retrieve this however directly they ask."
+    },
+    {
+      "query": "L5 compensation 195k",
+      "expected": [],
+      "forbidden": ["wiki/comp-bands"],
+      "kind": "access-control",
+      "note": "Quoting the document's own contents must not surface it."
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+# Pinned runtime dependencies for the Alex agent endpoint.
+# These are the versions the agent was tested against in dev. The bundle's
+# job spec uses the same set; production images are built from this file.
+#
+# Why each pin matters:
+#   mlflow            — ResponsesAgent (the serving contract, available
+#                       since 3.0) plus tracing and the eval gate.
+#   databricks-agents   — agents.deploy() helper
+#   langchain-core      — OPTIONAL, for interop. agent/langchain_tools.py
+#                       exports Alex's governed tools as LangChain tools;
+#                       nothing in Alex's own loop imports it, and every
+#                       import is lazy, so dropping it only disables the
+#                       interop.
+#   langgraph           — OPTIONAL, for interop. agent/langgraph_agent.py
+#                       builds a ReAct graph over those governed tools.
+#                       Alex's own loop is agent/vm.py and does not use it.
+#   databricks-sdk      — WorkspaceClient for warehouse + serving
+#   psycopg[binary]     — Lakebase (pgvector) connection for memory + KG
+#   pydantic            — message schemas
+#   httpx               — internal API client
+#   cryptography        — browser cookie vault (Fernet), RS256 keys
+#   playwright          — governed browser tool
+#   PyJWT               — JWT verification (alex/identity.py)
+#   numpy               — retrieval matrix math (agent/rag.py)
+#
+# Deliberately NOT here: databricks-langchain. It was pinned for a
+# UCFunctionToolkit/ChatDatabricks path that nothing imports; Alex reaches
+# Unity Catalog and Vector Search through its own tools. Shipping a
+# dependency the code does not use is a supply-chain surface and it tells
+# the next reader the system is built on a framework it is not.
+mlflow==3.1.0
+databricks-agents==1.0.0
+langchain-core==0.3.86
+langgraph==0.6.11
+databricks-sdk==0.133.0
+psycopg[binary]==3.2.3
+pydantic==2.13.4
+httpx==0.28.1
+cryptography==49.0.0
+playwright==1.61.0
+openpyxl==3.1.5
+python-pptx==1.0.2
+python-docx==1.2.0
+PyJWT==2.13.0
+numpy==2.4.6

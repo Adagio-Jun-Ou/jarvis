@@ -1,0 +1,357 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import './FlowVisualization.css';
+
+interface FlowNode {
+  id: string;
+  label: string;
+  icon: string;
+  x: number;
+  y: number;
+  type: 'input' | 'processor' | 'hub' | 'storage' | 'model' | 'subsystem' | 'tool';
+}
+
+interface FlowEdge {
+  from: string;
+  to: string;
+  label?: string;
+  type: 'input' | 'request' | 'bidirectional' | 'embedding' | 'insight' | 'tool' | 'model';
+}
+
+interface Particle {
+  id: number;
+  fromId: string;
+  toId: string;
+  color: string;
+  startTime: number;
+  duration: number;
+}
+
+const NODES: FlowNode[] = [
+  { id: 'user', label: 'User', icon: '👤', x: 80, y: 40, type: 'input' },
+  { id: 'agent', label: 'Jarvis Agent', icon: '🤖', x: 250, y: 40, type: 'processor' },
+  { id: 'context', label: 'Context Engine', icon: '📝', x: 420, y: 40, type: 'processor' },
+  { id: 'insight_active', label: 'Active Insights', icon: '💡', x: 300, y: 140, type: 'storage' },
+  { id: 'memory', label: 'Memory', icon: '💾', x: 180, y: 140, type: 'storage' },
+  { id: 'knowledge', label: 'Knowledge Graph', icon: '🕸️', x: 540, y: 140, type: 'storage' },
+  { id: 'embedding', label: 'Embedding Hub', icon: '🔗', x: 420, y: 240, type: 'hub' },
+  { id: 'primary', label: 'Kimi (Primary)', icon: '🧠', x: 150, y: 360, type: 'model' },
+  { id: 'backend', label: 'GLM-5 (Backend)', icon: '⚙️', x: 350, y: 360, type: 'model' },
+  { id: 'tools', label: 'Tools', icon: '🔧', x: 550, y: 360, type: 'tool' },
+  { id: 'tool_learning', label: 'Tool Learning', icon: '📚', x: 700, y: 320, type: 'processor' },
+  { id: 'erdos', label: 'Erdős Engine', icon: '🔢', x: 80, y: 480, type: 'subsystem' },
+  { id: 'daydream', label: 'Daydream', icon: '💭', x: 220, y: 480, type: 'subsystem' },
+  { id: 'evolution', label: 'Evolution', icon: '🧬', x: 360, y: 480, type: 'subsystem' },
+  { id: 'learning', label: 'Learning', icon: '📈', x: 500, y: 480, type: 'subsystem' },
+  { id: 'defense', label: 'Defense', icon: '🛡️', x: 640, y: 480, type: 'subsystem' },
+  { id: 'insight_bridge', label: 'Insight Bridge', icon: '🌉', x: 300, y: 580, type: 'processor' },
+  { id: 'vector_memory', label: 'Vector Memory', icon: '🔎', x: 500, y: 580, type: 'storage' },
+];
+
+const EDGES: FlowEdge[] = [
+  { from: 'user', to: 'agent', label: 'query', type: 'input' },
+  { from: 'agent', to: 'context', label: 'assemble', type: 'request' },
+  { from: 'context', to: 'insight_active', type: 'bidirectional' },
+  { from: 'context', to: 'memory', type: 'bidirectional' },
+  { from: 'context', to: 'knowledge', type: 'bidirectional' },
+  { from: 'context', to: 'embedding', type: 'bidirectional' },
+  { from: 'memory', to: 'embedding', type: 'embedding' },
+  { from: 'knowledge', to: 'embedding', type: 'embedding' },
+  { from: 'embedding', to: 'vector_memory', type: 'embedding' },
+  { from: 'agent', to: 'primary', label: 'chat', type: 'model' },
+  { from: 'agent', to: 'backend', label: 'code/math', type: 'model' },
+  { from: 'primary', to: 'embedding', type: 'embedding' },
+  { from: 'backend', to: 'embedding', type: 'embedding' },
+  { from: 'agent', to: 'tools', type: 'tool' },
+  { from: 'tools', to: 'tool_learning', type: 'tool' },
+  { from: 'tool_learning', to: 'embedding', type: 'embedding' },
+  { from: 'erdos', to: 'insight_bridge', type: 'insight' },
+  { from: 'daydream', to: 'insight_bridge', type: 'insight' },
+  { from: 'learning', to: 'insight_bridge', type: 'insight' },
+  { from: 'insight_bridge', to: 'knowledge', type: 'insight' },
+  { from: 'insight_bridge', to: 'embedding', type: 'embedding' },
+];
+
+const TYPE_COLORS: Record<string, string> = {
+  input: '#ec4899',
+  request: '#64748b',
+  bidirectional: '#22c55e',
+  embedding: '#a855f7',
+  insight: '#f97316',
+  tool: '#14b8a6',
+  model: '#6366f1',
+};
+
+export function FlowVisualization() {
+  const [particles, setParticles] = useState<Particle[]>([]);
+  const [nodeStates, setNodeStates] = useState<Record<string, { active: boolean; count?: number }>>({});
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [flowData, setFlowData] = useState<any>(null);
+  const lastDataRef = useRef<any>(null);
+  const particleIdRef = useRef(0);
+  const ambientIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  const createParticle = useCallback((fromId: string, toId: string, color: string, duration = 1500) => {
+    const id = particleIdRef.current++;
+    setParticles(prev => [...prev.slice(-50), { id, fromId, toId, color, startTime: Date.now(), duration }]);
+  }, []);
+  
+  const animateNode = useCallback((nodeId: string) => {
+    setNodeStates(prev => ({ ...prev, [nodeId]: { active: true } }));
+    setTimeout(() => setNodeStates(prev => { const n = { ...prev }; delete n[nodeId]; return n; }), 2000);
+  }, []);
+  
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [dashResp, flowResp] = await Promise.all([
+          fetch('/api/dashboard'),
+          fetch('/api/flow/live'),
+        ]);
+        const dashboard = await dashResp.json();
+        const flow = flowResp.ok ? await flowResp.json() : {};
+        
+        setDashboardData(dashboard);
+        setFlowData(flow);
+        
+        if (lastDataRef.current) {
+          const prev = lastDataRef.current;
+          
+          if ((dashboard.dual_model?.primary_requests || 0) > (prev.dual_model?.primary_requests || 0)) {
+            createParticle('agent', 'primary', '#22c55e', 1200);
+            setTimeout(() => { createParticle('primary', 'embedding', '#a855f7', 1200); animateNode('primary'); animateNode('embedding'); }, 200);
+            animateNode('agent');
+          }
+          if ((dashboard.dual_model?.backend_requests || 0) > (prev.dual_model?.backend_requests || 0)) {
+            createParticle('agent', 'backend', '#6366f1', 1200);
+            setTimeout(() => { createParticle('backend', 'embedding', '#a855f7', 1200); animateNode('backend'); animateNode('embedding'); }, 200);
+            animateNode('agent');
+          }
+          if ((dashboard.embeddings?.stored_embeddings || 0) > (prev.embeddings?.stored_embeddings || 0)) {
+            createParticle('embedding', 'vector_memory', '#a855f7', 1200);
+            setTimeout(() => { createParticle('embedding', 'knowledge', '#f97316', 1200); }, 300);
+            animateNode('vector_memory');
+          }
+          if ((dashboard.knowledge_nodes?.nodes?.length || 0) > (prev.knowledge_nodes?.nodes?.length || 0)) {
+            createParticle('insight_bridge', 'knowledge', '#f97316', 1200);
+            animateNode('knowledge');
+          }
+        }
+        
+        lastDataRef.current = dashboard;
+      } catch (e) {
+        console.error('Flow visualization error:', e);
+      }
+    };
+    
+    fetchData();
+    const interval = setInterval(fetchData, 500);
+    return () => clearInterval(interval);
+  }, [createParticle, animateNode]);
+  
+  useEffect(() => {
+    const createAmbientParticles = () => {
+      const subs = dashboardData?.subsystems || {};
+      
+      if (subs['Erdős Engine']?.running || subs.erdos?.running) {
+        if (Math.random() > 0.6) createParticle('erdos', 'insight_bridge', '#f59e0b', 2000);
+        animateNode('erdos');
+      }
+      if (subs['Daydream']?.running || subs.daydream?.running) {
+        if (Math.random() > 0.6) createParticle('daydream', 'insight_bridge', '#f59e0b', 2000);
+        animateNode('daydream');
+      }
+      if (subs['Evolution']?.running || subs.evolution?.running) {
+        if (Math.random() > 0.7) createParticle('evolution', 'memory', '#f59e0b', 2000);
+        animateNode('evolution');
+      }
+      if (subs['Learning']?.running || subs.learning?.running) {
+        if (Math.random() > 0.6) createParticle('learning', 'insight_bridge', '#f59e0b', 2000);
+        animateNode('learning');
+      }
+      if (subs['Defense']?.running || subs.defense?.running) {
+        if (Math.random() > 0.7) createParticle('defense', 'knowledge', '#f59e0b', 2000);
+        animateNode('defense');
+      }
+      
+      if (flowData?.stats?.embedding_interconnect?.rate_per_min > 0) {
+        const targets = ['memory', 'knowledge', 'vector_memory'];
+        const target = targets[Math.floor(Math.random() * targets.length)];
+        createParticle('embedding', target, '#a855f7', 1500);
+      }
+    };
+    
+    ambientIntervalRef.current = setInterval(createAmbientParticles, 800);
+    return () => { if (ambientIntervalRef.current) clearInterval(ambientIntervalRef.current); };
+  }, [dashboardData?.subsystems, flowData?.stats, createParticle, animateNode]);
+  
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      const now = Date.now();
+      setParticles(prev => prev.filter(p => now - p.startTime < 3000));
+    }, 500);
+    return () => clearInterval(cleanup);
+  }, []);
+  
+  const getNodeById = (id: string) => NODES.find(n => n.id === id);
+  
+  const getEdgePositions = (fromId: string, toId: string) => {
+    const from = getNodeById(fromId);
+    const to = getNodeById(toId);
+    return from && to ? { x1: from.x, y1: from.y, x2: to.x, y2: to.y } : null;
+  };
+  
+  const getParticlePosition = (particle: Particle, time: number) => {
+    const pos = getEdgePositions(particle.fromId, particle.toId);
+    if (!pos) return null;
+    const elapsed = time - particle.startTime;
+    const progress = Math.min(elapsed / particle.duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    return { x: pos.x1 + (pos.x2 - pos.x1) * eased, y: pos.y1 + (pos.y2 - pos.y1) * eased, opacity: Math.sin(progress * Math.PI) };
+  };
+  
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    let frame: number;
+    const animate = () => { forceUpdate(n => n + 1); frame = requestAnimationFrame(animate); };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  
+  const time = Date.now();
+  const subsLabels: Record<string, string> = { erdos: 'Erdős Engine', daydream: 'Daydream', evolution: 'Evolution', learning: 'Learning', defense: 'Defense' };
+  const subsIcons: Record<string, string> = { erdos: '🔢', daydream: '💭', evolution: '🧬', learning: '📈', defense: '🛡️' };
+  
+  const embeddingRate = flowData?.stats?.embedding_interconnect?.rate_per_min || 0;
+  const activeSubsystems = Object.values(dashboardData?.subsystems || {}).filter((s: any) => s?.running).length;
+  
+  return (
+    <div className="flow-viz">
+      <div className="flow-viz-header">
+        <h3>Semantic Flow Architecture</h3>
+        <div className="flow-viz-status">
+          <span className={`live-badge ${embeddingRate > 0 || activeSubsystems > 0 ? 'active' : ''}`}>● LIVE</span>
+          <span className="stats-summary">
+            {embeddingRate > 0 && <span className="rate-indicator">{embeddingRate.toFixed(1)}/min</span>}
+            {(dashboardData?.dual_model?.total_requests || 0)} req · {(dashboardData?.embeddings?.stored_embeddings || 0)} emb
+          </span>
+        </div>
+      </div>
+      
+      <div className="flow-diagram-container">
+        <svg className="flow-svg" viewBox="0 0 800 650" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#666" /></marker>
+            <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#22c55e" /></marker>
+            <filter id="pulse-glow" x="-100%" y="-100%" width="300%" height="300%">
+              <feGaussianBlur stdDeviation="6" result="blur"><animate attributeName="stdDeviation" values="6;3;6" dur="1.5s" repeatCount="indefinite" /></feGaussianBlur>
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            <filter id="particle-glow">
+              <feGaussianBlur stdDeviation="2" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+          
+          <g className="edges-layer">
+            {EDGES.map((edge, i) => {
+              const pos = getEdgePositions(edge.from, edge.to);
+              if (!pos) return null;
+              const isActive = nodeStates[edge.from]?.active || nodeStates[edge.to]?.active;
+              return (
+                <g key={i}>
+                  <line 
+                    x1={pos.x1} y1={pos.y1} x2={pos.x2} y2={pos.y2} 
+                    stroke={isActive ? '#22c55e' : TYPE_COLORS[edge.type] || '#4b5563'} 
+                    strokeWidth={isActive ? 3 : 1.5} 
+                    strokeDasharray={edge.type === 'bidirectional' ? '5,5' : 'none'} 
+                    markerEnd={`url(#${isActive ? 'arrowhead-active' : 'arrowhead'})`} 
+                    opacity={isActive ? 1 : 0.4} 
+                    className="flow-edge" 
+                  />
+                  {edge.label && (
+                    <text x={(pos.x1 + pos.x2) / 2} y={(pos.y1 + pos.y2) / 2 - 8} fontSize="9" fill="#888" textAnchor="middle" className="edge-label">{edge.label}</text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+          
+          <g className="particles-layer" filter="url(#particle-glow)">
+            {particles.map(p => {
+              const pos = getParticlePosition(p, time);
+              if (!pos) return null;
+              return (
+                <g key={p.id}>
+                  <circle cx={pos.x} cy={pos.y} r="8" fill={p.color} opacity={pos.opacity * 0.3} />
+                  <circle cx={pos.x} cy={pos.y} r="5" fill={p.color} opacity={pos.opacity}>
+                    <animate attributeName="r" values="5;8;5" dur="0.4s" repeatCount="indefinite" />
+                  </circle>
+                </g>
+              );
+            })}
+          </g>
+          
+          <g className="nodes-layer">
+            {NODES.map(node => {
+              const isActive = nodeStates[node.id]?.active;
+              const size = node.type === 'hub' ? 60 : node.type === 'storage' ? 45 : 40;
+              return (
+                <g key={node.id} transform={`translate(${node.x}, ${node.y})`} className={`flow-node-group ${isActive ? 'active' : ''}`}>
+                  <rect x={-size} y={-size/2} width={size * 2} height={size} rx={8} className={`flow-node node-${node.type}`} filter={isActive ? 'url(#pulse-glow)' : undefined} />
+                  <text y={-size/4} textAnchor="middle" fontSize="16" className="node-icon">{node.icon}</text>
+                  <text y={size/4} textAnchor="middle" fontSize="10" className="node-label">{node.label}</text>
+                  {isActive && <circle cx={size + 8} cy={-size/2} r="5" fill="#22c55e"><animate attributeName="opacity" values="1;0.3;1" dur="0.8s" repeatCount="indefinite" /></circle>}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      </div>
+      
+      <div className="flow-live-events">
+        <h4>Live Flow Events</h4>
+        <div className="events-scroll">
+          {particles.length === 0 ? (
+            <div className="no-events">
+              <p>Waiting for activity...</p>
+              <p className="hint">Triggers: Model calls, Embedding stores, Insight generation, Subsystem activity</p>
+            </div>
+          ) : (
+            <div className="particles-active">
+              <span className="pulse-indicator"></span>
+              <span className="particle-count">{particles.length} active flow{particles.length !== 1 ? 's' : ''}</span>
+              {embeddingRate > 0 && <span className="flow-rate">{embeddingRate.toFixed(1)}/min</span>}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <div className="flow-stats-grid">
+        <div className="stat-card"><span className="stat-icon">🧠</span><span className="stat-label">Primary</span><span className="stat-value">{(dashboardData?.dual_model?.primary_requests || 0).toLocaleString()}</span></div>
+        <div className="stat-card"><span className="stat-icon">⚙️</span><span className="stat-label">Backend</span><span className="stat-value">{(dashboardData?.dual_model?.backend_requests || 0).toLocaleString()}</span></div>
+        <div className="stat-card hub"><span className="stat-icon">🔗</span><span className="stat-label">Embeddings</span><span className="stat-value">{(dashboardData?.embeddings?.stored_embeddings || 0).toLocaleString()}</span></div>
+        <div className="stat-card"><span className="stat-icon">💾</span><span className="stat-label">Vectors</span><span className="stat-value">{(dashboardData?.memory_stats?.stats?.vector?.vector_count || 0).toLocaleString()}</span></div>
+        <div className="stat-card"><span className="stat-icon">🕸️</span><span className="stat-label">Knowledge</span><span className="stat-value">{(dashboardData?.knowledge_nodes?.nodes?.length || 0).toLocaleString()}</span></div>
+        <div className="stat-card"><span className="stat-icon">🔧</span><span className="stat-label">Tools</span><span className="stat-value">{Object.keys(dashboardData?.tools || {}).length}</span></div>
+      </div>
+      
+      <div className="flow-subsystems">
+        <h4>Background Subsystems {activeSubsystems > 0 && <span className="active-count">({activeSubsystems} active)</span>}</h4>
+        <div className="subsystems-grid">
+          {['erdos', 'daydream', 'evolution', 'learning', 'defense'].map(name => {
+            const subData = dashboardData?.subsystems?.[name] || dashboardData?.subsystems?.[name.charAt(0).toUpperCase() + name.slice(1)];
+            const isRunning = subData?.running;
+            return (
+              <div key={name} className={`subsystem-card ${isRunning ? 'running' : 'idle'}`}>
+                <span className="sub-icon">{subsIcons[name] || '⚙️'}</span>
+                <span className="sub-name">{subsLabels[name] || name}</span>
+                <span className={`sub-status ${isRunning ? 'active' : ''}`}>{isRunning ? '● Running' : '○ Idle'}</span>
+                {subData?.current_task && <span className="sub-task">{subData.current_task.slice(0, 35)}...</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
