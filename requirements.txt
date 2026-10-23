@@ -18,7 +18,7 @@ fastapi>=0.100.0
 uvicorn>=0.23.0
 websockets>=11.0
 python-multipart>=0.0.6   # required by FastAPI Form(...) — /api/chat 500s without it
-aiofiles>=23.0.0          # async file IO in tools/base.py
+aiofiles>=25.1.0          # async file IO in tools/base.py
 
 # System
 psutil>=5.9.0             # imported by 17 core modules (resource_monitor, hardware, ...)
