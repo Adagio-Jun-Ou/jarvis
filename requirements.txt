@@ -44,7 +44,7 @@ pillow>=10.0.0
 
 # Web Tools
 # (httpx already listed above)
-beautifulsoup4>=4.12.0
+beautifulsoup4>=4.15.0
 duckduckgo-search>=3.9.0
 
 # Memory (optional)
