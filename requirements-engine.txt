@@ -24,7 +24,7 @@
 # lazily imported, never reached by the app).
 fastapi==0.139.2
 uvicorn==0.51.0
-databricks-sdk==0.133.0
+databricks-sdk==0.154.0
 psycopg[binary]==3.2.3
 PyJWT==2.13.0
 cryptography==49.0.0

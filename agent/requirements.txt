@@ -32,7 +32,7 @@ mlflow==3.1.0
 databricks-agents==1.0.0
 langchain-core==0.3.86
 langgraph==0.6.11
-databricks-sdk==0.133.0
+databricks-sdk==0.154.0
 psycopg[binary]==3.2.3
 pydantic==2.13.4
 httpx==0.28.1
