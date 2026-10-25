@@ -1,0 +1,62 @@
+.git
+.gitignore
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv
+.venv
+env
+*.egg-info
+dist
+build
+.eggs
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Test and coverage
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+coverage.xml
+
+# Secrets - NEVER include in image
+.env
+.secrets
+ssl/*.key
+ssl/*.pem
+*.key
+*.pem
+
+# Logs
+logs/
+*.log
+
+# Data volumes (mounted at runtime)
+.jarvis/
+.jarvis_workspace/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development files
+Makefile
+docker-compose.yml
+Dockerfile
+jarvis.service
+jarvis_restart.log
+
+# Runtime data
+npu_models/
+knowledge/
+storage/

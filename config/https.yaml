@@ -1,0 +1,37 @@
+# HTTPS/TLS Configuration for Jarvis
+# Generated for Tailscale funnel access
+
+https:
+  enabled: true
+  port: 8443
+  
+ssl:
+  cert_file: ssl/cert.pem
+  key_file: ssl/key.pem
+  
+tailscale:
+  enabled: true
+  hostname: your-host
+  tailnet: your-tailnet.ts.net
+  funnel_url: https://your-host.your-tailnet.ts.net:8443
+  tailscale_ip: 203.0.113.10
+  
+certificate:
+  subject_cn: your-host.your-tailnet.ts.net
+  san_domains:
+    - localhost
+    - your-host
+    - your-host.your-tailnet.ts.net
+    - "*.your-tailnet.ts.net"
+  san_ips:
+    - 127.0.0.1
+    - 203.0.113.10
+  validity_days: 365
+  
+mobile:
+  enabled: true
+  auth_dir: ~/.jarvis/mobile_auth
+  session_expiry_hours: 168
+  webauthn:
+    rp_name: "Jarvis AI Assistant"
+    rp_id: your-host.your-tailnet.ts.net

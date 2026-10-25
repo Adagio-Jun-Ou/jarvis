@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff pytest pytest-asyncio
+      
+      # Blocking gate. These rules catch defects that reach runtime — undefined
+      # names (F821/F822), duplicated definitions and dict/set keys that
+      # silently discard data (F811/F601/B033), pylint errors (PLE), asyncio
+      # tasks dropped by the garbage collector (RUF006), and loop-variable
+      # capture in closures (B023). The tree is clean against these; keep it so.
+      - name: Lint with ruff
+        run: |
+          ruff check core/ tools/ interfaces/ speech/ run.py \
+            --select=E9,F63,F7,F82,W6,F811,F601,F602,B006,B023,B033,PLE,RUF006
+
+      # Advisory: broader style/robustness signal, reported but not enforced
+      # while the existing backlog is worked down.
+      - name: Lint (advisory, non-blocking)
+        continue-on-error: true
+        run: |
+          ruff check core/ tools/ interfaces/ speech/ run.py \
+            --select=F,B,ASYNC,PLW,RUF --ignore=F401,F403,F405 --statistics
+
+      - name: Check formatting
+        continue-on-error: true
+        run: |
+          ruff format --check core/ tools/ interfaces/ --diff
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+      
+      # Blocking. `requires_host_env` covers tests that assert facts about the
+      # developer's machine (installed binaries, soundfonts, secrets files)
+      # rather than Jarvis behaviour — those are for local use, not CI.
+      - name: Run tests
+        run: |
+          pytest tests/ -m "not requires_host_env" --tb=short \
+            --cov=core --cov=tools --cov-report=xml --cov-report=term-missing
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  security:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety
+      
+      - name: Run bandit security check
+        run: |
+          bandit -r core/ tools/ -ll --skip B101,B311
+        continue-on-error: true
+      
+      - name: Check dependencies for vulnerabilities
+        run: |
+          safety check -r requirements.txt || true
+        continue-on-error: true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Verify imports
+        run: |
+          python -c "
+          from core.agent import JarvisAgent
+          from core.config import Config
+          from core.llm import OllamaClient
+          from core.memory import ConversationMemory
+          print('All core imports successful')
+          "

@@ -1,0 +1,59 @@
+# Network Configuration for Jarvis
+# HTTPS + Tailscale Funnel Access
+
+network:
+  protocol: https
+  port: 8443
+  
+https:
+  enabled: true
+  cert_file: ssl/cert.pem
+  key_file: ssl/key.pem
+  
+tailscale:
+  enabled: true
+  hostname: your-host
+  tailnet: your-tailnet.ts.net
+  tailscale_ip: 203.0.113.10
+  
+urls:
+  local: https://localhost:8443
+  tailscale: https://your-host.your-tailnet.ts.net:8443
+  
+endpoints:
+  health: /health
+  chat: /ws/chat
+  api: /api/
+  
+ssl:
+  algorithm: RSA
+  key_size: 4096
+  validity_days: 365
+  
+certificate:
+  subject:
+    country: US
+    state: California
+    city: San Francisco
+    organization: Jarvis
+    common_name: your-host.your-tailnet.ts.net
+  
+  san_domains:
+    - localhost
+    - your-host
+    - your-host.your-tailnet.ts.net
+    - "*.your-tailnet.ts.net"
+    
+  san_ips:
+    - 127.0.0.1
+    - 203.0.113.10
+    
+startup:
+  script: scripts/start_jarvis.sh
+  service: scripts/jarvis.service
+  log_file: logs/jarvis.log
+  
+environment:
+  ROCM_VISIBLE_DEVICES: ""
+  HIP_VISIBLE_DEVICES: ""
+  CUDA_VISIBLE_DEVICES: ""

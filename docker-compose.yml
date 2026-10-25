@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  jarvis:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GOOGLE_ENGINE_ID=${GOOGLE_ENGINE_ID:-}
+      - N8N_API_KEY=${N8N_API_KEY:-}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - jarvis-data:/home/jarvis/.jarvis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+volumes:
+  jarvis-data:

@@ -1,0 +1,53 @@
+# Unity AI Gateway — config-as-code for the Alex agent endpoint.
+#
+# Applied by agent/deploy.py (_apply_ai_gateway) right after the agent
+# lands on its serving endpoint, via the SDK's put_ai_gateway. It
+# declares a single route (the agent's primary model), a fallback,
+# per-user rate limits, group budgets, PII guardrails, and payload
+# logging.
+#
+# `principal` values MUST be SCIM group principal IDs, not display names.
+# The bundle substitutes them from a workspace variable per target.
+
+route: databricks-glm-5-3-flash
+
+fallbacks:
+  - databricks-meta-llama-3-3-70b-instruct
+
+rate_limits:
+  - calls: 60
+    renewal_period: minute
+    key: user
+  - calls: 1000
+    renewal_period: minute
+    key: endpoint
+
+budgets:
+  - principal: ${var.GROUP_ALEX_USERS_ID}
+    tokens_per_hour: 2000000
+  - principal: ${var.GROUP_ALEX_GOVERNORS_ID}
+    tokens_per_hour: 5000000
+
+guardrails:
+  pii:
+    behavior: MASK
+    apply_to: [request, response]
+  invalid_keywords:
+    - "DROP TABLE"
+    - "rm -rf"
+  safety: true
+
+inference_table:
+  catalog: media
+  schema: ops
+  table_name_prefix: gateway_logs
+
+# Full payload logging for compliance review. Sampled at 1% to control cost
+# while keeping enough data for retrospective review.
+payload_logging:
+  enabled: true
+  sample_rate: 0.01
+  destination:
+    catalog: media
+    schema: ops
+    table_name_prefix: gateway_logs_payload

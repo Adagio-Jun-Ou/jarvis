@@ -1,0 +1,37 @@
+# requirements.txt — the Databricks App's runtime environment.
+#
+# Databricks Apps installs THIS file (at the app source root) into the
+# app container; agent/requirements.txt is the SERVING endpoint's set
+# and pipelines get theirs from the bundle job specs. The app imports
+# both alex/ and agent/, so this is the union of what the web process
+# actually reaches at runtime — kept pinned to the same versions the
+# agent set was tested against.
+#
+#   fastapi / uvicorn — the web process itself (app.yaml command)
+#   databricks-sdk    — warehouse statements + Lakebase credential vending
+#   psycopg[binary]   — Lakebase (pgvector): memory, KG, knowledge base
+#   PyJWT + cryptography — RS256/JWKS verification (alex/identity.py);
+#                       PyJWT alone cannot verify asymmetric signatures
+#   numpy             — retrieval matrix math (agent/rag.py)
+#   pydantic          — message schemas
+#   httpx             — internal API client
+#   python-multipart  — FastAPI UploadFile parsing
+#   openpyxl / python-pptx / python-docx — office document tools
+#
+# Deliberately NOT here: mlflow and databricks-agents (only the deploy
+# job needs them), playwright (browser containers run in the sandbox
+# pool, not in the app process), langchain/langgraph (interop exports,
+# lazily imported, never reached by the app).
+fastapi==0.139.2
+uvicorn==0.51.0
+databricks-sdk==0.133.0
+psycopg[binary]==3.2.3
+PyJWT==2.13.0
+cryptography==49.0.0
+numpy==2.4.6
+pydantic==2.13.4
+httpx==0.28.1
+python-multipart==0.0.32
+openpyxl==3.1.5
+python-pptx==1.0.2
+python-docx==1.2.0

@@ -1,0 +1,3041 @@
+"""Music Creation Engine - Continuous autonomous classical music composition.
+
+An always-on background subsystem that:
+1. Continuously creates original classical compositions
+2. Balances control (structure, theory) with spontaneity (variation, surprise)
+3. Feeds acoustic and symbolic tokens to PFC for continuous learning
+4. Maintains compositional memory across themes and variations
+5. Integrates with Insight Bridge for musical insights
+
+Architecture mirrors ErdosEngine and LearningPipeline:
+- Background task running continuously
+- Generates compositions at configurable intervals
+- Observes tokens with Prefrontal Cortex
+- Stores compositions and patterns in knowledge graph
+- Evolves compositional style over time
+
+Foundational Composers:
+- J.S. Bach (1685-1750): Baroque master - contrapuntal perfection, figured bass,
+  strict voice leading, fugues, inventions. Foundation: species counterpoint,
+  harmonic function, ornamentation tables.
+- Mozart (1756-1791): Classical perfection - balanced phrases, clear forms,
+  elegant melody, Alberti bass. Foundation: sonata form, operatic drama,
+  symphonic structure.
+- Beethoven (1770-1827): Revolutionary - motivic development, emotional range,
+  expanded harmony. Foundation: theme transformation, structural innovation,
+  dynamic contrast.
+
+Music Theory Foundation:
+- Classical forms: binary, ternary, sonata, rondo, theme & variations
+- Voice leading rules (species counterpoint from Bach)
+- Functional harmony (T-D-D-T, circle of fifths)
+- Motivic development (Beethoven-style transformation)
+- Ornamentation (baroque practices from Bach)
+
+Spontaneity Mechanisms:
+- Weighted random choices biased by context
+- "Surprise" probability that breaks patterns
+- Cross-style pollination (baroque ornaments in classical context)
+- Parametric variation of themes
+"""
+import asyncio
+import json
+import logging
+import random
+import re
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+
+logger = logging.getLogger(__name__)
+
+from core.helpers import atomic_write_json, create_tracked_task, read_json_with_integrity
+from core.prefrontal_cortex import get_prefrontal_cortex, ConceptType
+from core.music_evolution import get_evolution_engine, StyleParameters
+from core.music_self_learning import get_self_learning
+from core.music_lcm import get_music_lcm, MusicalConcept
+from core.compositional_reasoning import get_reasoner
+
+
+class MusicalForm(Enum):
+    """Classical musical forms."""
+    BINARY = "binary"           # AB
+    TERNARY = "ternary"         # ABA
+    SONATA = "sonata"          # Exposition-Development-Recapitulation
+    RONDO = "rondo"            # ABACABA
+    THEME_VARIATIONS = "theme_variations"  # Theme + N variations
+    FUGUE = "fugue"           # Contrapuntal
+    INVENTION = "invention"    # Two-voice contrapuntal
+    PRELUDE = "prelude"       # Free form
+    NOCTURNE = "nocturne"     # Romantic character piece
+
+
+class CompositionalStyle(Enum):
+    """Style periods for composition."""
+    BAROQUE = "baroque"        # 1600-1750: Bach, Handel, Vivaldi
+    CLASSICAL = "classical"    # 1750-1820: Mozart, Haydn, early Beethoven
+    ROMANTIC = "romantic"      # 1820-1900: Chopin, Brahms, Liszt
+    MODERN = "modern"         # 1900-present: Extended techniques
+
+
+class EmotionalCharacter(Enum):
+    """Emotional character for compositions."""
+    JOYFUL = "joyful"
+    MELANCHOLIC = "melancholic"
+    DRAMATIC = "dramatic"
+    PEACEFUL = "peaceful"
+    HEROIC = "heroic"
+    MYSTERIOUS = "mysterious"
+    PLAYFUL = "playful"
+
+
+@dataclass
+class Theme:
+    """A musical theme that can be developed."""
+    id: str
+    notes: list[str]              # ["C4", "E4", "G4", "C5"]
+    rhythm: list[float]           # [1.0, 1.0, 0.5, 0.5] duration in beats
+    key: str                      # "C_major", "A_minor"
+    style: CompositionalStyle
+    character: EmotionalCharacter
+    variations: list[dict] = field(default_factory=list)
+    usage_count: int = 0
+    last_used: datetime | None = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class Composition:
+    """A complete musical composition."""
+    id: str
+    title: str
+    style: CompositionalStyle
+    form: MusicalForm
+    key: str
+    tempo: int
+    character: EmotionalCharacter
+    
+    # Structure
+    sections: list[dict]          # [{"name": "A", "measures": [...], ...}]
+    
+    # Thematic material
+    themes: list[str]              # Theme IDs used
+    
+    # Symbolic representation
+    measures: list[dict]          # Note data per measure
+    
+    # Token representations
+    symbolic_tokens: list[dict] = field(default_factory=list)
+    acoustic_tokens: list[dict] = field(default_factory=list)
+    spectral_tokens: list[dict] = field(default_factory=list)
+    
+    # MusicGen audio (if generated by MusicGen)
+    audio_data: object = None  # numpy array
+    sample_rate: int = 24000
+    
+    # Compositional reasoning - WHY choices were made
+    reasoning: dict | None = None  # CompositionalReasoning.to_dict()
+    
+    # Metadata
+    created_at: datetime = field(default_factory=datetime.now)
+    observations: int = 0          # Times PFC has observed this
+    insight_generated: bool = False
+    fitness: float = 0.5           # Evolution fitness score (0-1)
+    
+    MAX_MEASURES = 500
+    MAX_THEMES = 10
+
+
+@dataclass
+class CompositionalInsight:
+    """An insight derived from composition process."""
+    id: str
+    insight_type: str              # "harmonic_progression", "thematic_development", etc.
+    content: str                  # The insight text
+    composition_id: str | None     # Composition that inspired it
+    evolution_guidance: dict       # How this affects future compositions
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+class MusicCreationEngine:
+    """Always-on background music creation system.
+    
+    Continuously creates classical music, balancing control and spontaneity,
+    while the PFC listens and learns from both symbolic and acoustic tokens.
+    """
+    
+    # Classical harmony rules
+    FUNCTIONAL_HARMONY = {
+        "major": {
+            "I":   {"function": "tonic", "resolves_to": ["I", "vi", "iii"], "tension": 0},
+            "ii":  {"function": "predominant", "resolves_to": ["V", "vii"], "tension": 2},
+            "iii": {"function": "tonic_substitute", "resolves_to": ["vi", "IV"], "tension": 1},
+            "IV":  {"function": "predominant", "resolves_to": ["V", "ii"], "tension": 2},
+            "V":   {"function": "dominant", "resolves_to": ["I", "vi"], "tension": 4},
+            "vi":  {"function": "tonic_substitute", "resolves_to": ["ii", "IV"], "tension": 1},
+            "vii": {"function": "dominant", "resolves_to": ["I"], "tension": 4},
+        },
+        "minor": {
+            "i":    {"function": "tonic", "resolves_to": ["i", "VI", "iii"], "tension": 0},
+            "ii°":  {"function": "predominant", "resolves_to": ["V", "vii"], "tension": 3},
+            "III":  {"function": "tonic_substitute", "resolves_to": ["VI", "iv"], "tension": 1},
+            "iv":   {"function": "predominant", "resolves_to": ["V", "ii°"], "tension": 2},
+            "V":    {"function": "dominant", "resolves_to": ["i"], "tension": 5},
+            "VI":   {"function": "tonic_substitute", "resolves_to": ["ii°", "iv"], "tension": 1},
+            "vii°": {"function": "dominant", "resolves_to": ["i"], "tension": 5},
+        }
+    }
+    
+    # Foundational composers and their stylistic signatures
+    # Western Classical Tradition
+    COMPOSER_SIGNATURES = {
+        # Baroque Masters
+        "bach": {
+            "name": "Johann Sebastian Bach",
+            "years": "1685-1750",
+            "style": CompositionalStyle.BAROQUE,
+            "signatures": [
+                "strict_counterpoint",
+                "fugal_exposition",
+                "species_counterpoint",
+                "figured_bass",
+                "ornament_tables",
+                "terraced_dynamics",
+                "continuous_rhythm",
+            ],
+            "forms": [MusicalForm.FUGUE, MusicalForm.INVENTION, MusicalForm.PRELUDE, MusicalForm.BINARY],
+            "harmony": "functional_tonal",
+            "melody": "stepwise_conjunct",
+        },
+        # Classical Period
+        "mozart": {
+            "name": "Wolfgang Amadeus Mozart",
+            "years": "1756-1791", 
+            "style": CompositionalStyle.CLASSICAL,
+            "signatures": [
+                "balanced_phrases",
+                "alberti_bass",
+                "elegant_melodies",
+                "clear_cadences",
+                "operatic_drama",
+                "symphonic_development",
+                "perfect_proportions",
+            ],
+            "forms": [MusicalForm.SONATA, MusicalForm.RONDO, MusicalForm.TERNARY, MusicalForm.THEME_VARIATIONS],
+            "harmony": "functional_clear",
+            "melody": "singing_quality",
+        },
+        # Classical to Romantic Bridge
+        "beethoven": {
+            "name": "Ludwig van Beethoven",
+            "years": "1770-1827",
+            "style": CompositionalStyle.CLASSICAL,
+            "signatures": [
+                "motivic_development",
+                "structural_innovation",
+                "dynamic_contrasts",
+                "expanded_form",
+                "emotional_range",
+                "theme_transformation",
+                "harmonic_surprise",
+                "rhythmic_drive",
+            ],
+            "forms": [MusicalForm.SONATA, MusicalForm.THEME_VARIATIONS, MusicalForm.RONDO],
+            "harmony": "expanded_functional",
+            "melody": "motivic_cells",
+        },
+        # Romantic Era
+        "schumann": {
+            "name": "Robert Schumann",
+            "years": "1810-1856",
+            "style": CompositionalStyle.ROMANTIC,
+            "signatures": [
+                "lyrical_melodies",
+                "literary_inspiration",
+                "chromatic_harmony",
+                "interlocking_rhythms",
+                "emotional_depth",
+                "character_pieces",
+                "clavecin_etude",
+            ],
+            "forms": [MusicalForm.NOCTURNE, MusicalForm.THEME_VARIATIONS, MusicalForm.PRELUDE],
+            "harmony": "chromatic_romantic",
+            "melody": "song_like",
+        },
+        "brahms": {
+            "name": "Johannes Brahms",
+            "years": "1833-1897",
+            "style": CompositionalStyle.ROMANTIC,
+            "signatures": [
+                "classical_forms",
+                "romantic_harmony",
+                "developing_variation",
+                "syncopated_rhythm",
+                "thick_textures",
+                "hemiola",
+                "structural_elaboration",
+            ],
+            "forms": [MusicalForm.SONATA, MusicalForm.THEME_VARIATIONS, MusicalForm.RONDO],
+            "harmony": "structured_romantic",
+            "melody": "broad_phrases",
+        },
+        "debussy": {
+            "name": "Claude Debussy",
+            "years": "1862-1918",
+            "style": CompositionalStyle.MODERN,
+            "signatures": [
+                "impressionist_harmony",
+                "whole_tone_scales",
+                "parallel_chords",
+                "tone_color",
+                "fluid_rhythm",
+                "pentatonic_influence",
+                "free_form",
+            ],
+            "forms": [MusicalForm.PRELUDE, MusicalForm.NOCTURNE],
+            "harmony": "impressionist",
+            "melody": "atmospheric",
+        },
+        "chopin": {
+            "name": "Frédéric Chopin",
+            "years": "1810-1849",
+            "style": CompositionalStyle.ROMANTIC,
+            "signatures": [
+                "cantabile_melody",
+                "rubato",
+                "bravura_passages",
+                "national_influence",
+                "chromatic_embellishment",
+                "nocturne_style",
+                "waltz_rhythm",
+            ],
+            "forms": [MusicalForm.NOCTURNE, MusicalForm.PRELUDE, MusicalForm.TERNARY],
+            "harmony": "chromatic_extended",
+            "melody": "bel_canto",
+        },
+        "dvorak": {
+            "name": "Antonín Dvořák",
+            "years": "1841-1904",
+            "style": CompositionalStyle.ROMANTIC,
+            "signatures": [
+                "folk_elements",
+                "slavonic_dances",
+                "lyrical_themes",
+                "modal_mixture",
+                "dumka_form",
+                "national_style",
+                "orchestral_color",
+            ],
+            "forms": [MusicalForm.THEME_VARIATIONS, MusicalForm.RONDO, MusicalForm.SONATA],
+            "harmony": "modal_folk",
+            "melody": "folk_inspired",
+        },
+        "tchaikovsky": {
+            "name": "Pyotr Ilyich Tchaikovsky",
+            "years": "1840-1893",
+            "style": CompositionalStyle.ROMANTIC,
+            "signatures": [
+                "melodic_genius",
+                "emotional_intensity",
+                "ballet_influence",
+                "orchestral_color",
+                "russian_soul",
+                "dramatic_climaxes",
+                "dance_rhythms",
+            ],
+            "forms": [MusicalForm.SONATA, MusicalForm.THEME_VARIATIONS, MusicalForm.NOCTURNE],
+            "harmony": "western_russian",
+            "melody": "long_lined",
+        },
+        # Eastern Classical Traditions (adapted for Western notation)
+        "raga_inspired": {
+            "name": "Raga Traditions",
+            "years": "ancient",
+            "style": CompositionalStyle.MODERN,
+            "signatures": [
+                "modal_improvisation",
+                "ornamentation",
+                "sruti_microtones",
+                "alap_development",
+                "tala_rhythm",
+                "drone_accompaniment",
+                "melodic improvisation",
+            ],
+            "forms": [MusicalForm.PRELUDE, MusicalForm.THEME_VARIATIONS],
+            "harmony": "modal_raga",
+            "melody": "ornamented_improvisatory",
+        },
+        "gagaku_inspired": {
+            "name": "Japanese Court Music",
+            "years": "ancient",
+            "style": CompositionalStyle.MODERN,
+            "signatures": [
+                "pentatonic_scales",
+                "sustained_tones",
+                "timbral_variations",
+                "slow_development",
+                "hierarchical_time",
+                "nature_imagery",
+                "space_and_silence",
+            ],
+            "forms": [MusicalForm.PRELUDE, MusicalForm.BINARY],
+            "harmony": "pentatonic_ambient",
+            "melody": "meditative",
+        },
+    }
+    
+    # Style-specific compositional practices (derived from foundational composers)
+    STYLE_PRACTICES = {
+        CompositionalStyle.BAROQUE: {
+            "foundation": "bach",
+            "ornamentation_probability": 0.6,
+            "counterpoint_strictness": 0.8,
+            "basso_continuo": True,
+            "terraced_dynamics": True,
+            "common_forms": [MusicalForm.BINARY, MusicalForm.FUGUE, MusicalForm.INVENTION],
+            "voice_leading": "strict",
+            "harmonic_rhythm": "fast",
+        },
+        CompositionalStyle.CLASSICAL: {
+            "foundation": ["mozart", "beethoven"],
+            "ornamentation_probability": 0.3,
+            "counterpoint_strictness": 0.4,
+            "basso_continuo": False,
+            "clear_phrases": True,
+            "common_forms": [MusicalForm.SONATA, MusicalForm.RONDO, MusicalForm.TERNARY],
+            "voice_leading": "moderate",
+            "harmonic_rhythm": "moderate",
+        },
+        CompositionalStyle.ROMANTIC: {
+            "foundation": "beethoven_evolved",
+            "ornamentation_probability": 0.5,
+            "counterpoint_strictness": 0.2,
+            "rubato": True,
+            "chromatic_harmony": True,
+            "common_forms": [MusicalForm.NOCTURNE, MusicalForm.THEME_VARIATIONS, MusicalForm.PRELUDE],
+            "voice_leading": "free",
+            "harmonic_rhythm": "slow",
+        },
+    }
+    
+    # Spontaneity parameters - increased for more variety
+    SPONTANEITY_CONFIG = {
+        "surprise_probability": 0.20,       # 20% chance of unexpected element
+        "cross_style_pollination": 0.25,    # 25% chance of mixing styles
+        "modulation_probability": 0.30,     # 30% chance of harmonic modulation
+        "thematic_inversion": 0.30,         # 30% chance of theme inversion
+        "metric_displacement": 0.20,        # 20% chance of rhythmic surprise
+        "dynamic_contrast": 0.35,           # 35% chance of dynamic surprise
+        "form_deviation": 0.20,             # 20% chance of breaking form
+    }
+    
+    MAX_COMPOSITIONS = 1000  # Keep 1000 compositions in memory (10x)
+    MAX_THEMES = 1000        # Keep 1000 themes
+    MAX_INSIGHTS = 10000     # Keep 10000 insights (10x)
+    MAX_STORAGE_GB = 2      # 2GB rolling storage limit
+    MAX_AUDIO_IN_MEMORY = 10  # Only keep last 10 compositions' audio in memory
+    
+    def __init__(self, storage_path: Path | str | None = None):
+        self.storage_path = Path(storage_path) if storage_path else Path.home() / ".jarvis" / "music"
+        self.storage_path.mkdir(parents=True, exist_ok=True)
+        
+        # Composition storage
+        self.compositions: list[Composition] = []
+        self.themes: dict[str, Theme] = {}
+        self.insights: list[CompositionalInsight] = []
+        
+        # Creation state
+        self._counter = 0
+        self._current_composition: Composition | None = None
+        self._active_themes: list[str] = []
+        
+        # Background task
+        self._running = False
+        self._task: asyncio.Task | None = None
+        self._lock = threading.RLock()
+        
+        # Evolution engine for learning (lazy init)
+        self._evolution_engine = None
+        
+        # Music learning system for master techniques
+        self._music_learning = None
+        
+        # Creation interval (seconds between compositions)
+        self.creation_interval = 120  # 2 minutes
+        
+        # PFC reference for observation
+        self._pfc = None
+        
+        # Music generator (lazy loaded)
+        self._music_gen = None
+        self._acoustic_gen = None
+        
+        # Stats
+        self._compositions_created = 0
+        self._tokens_observed = 0
+        self._last_creation: datetime | None = None
+        
+        # Insight integration
+        self._insight_bridge = None
+        self._knowledge_graph = None
+        
+        # LCM concept tracking
+        self._successful_concepts: dict[str, list] = {}
+        
+        self._load_state()
+        
+        # Initialize evolution engine after state is loaded
+        self._init_evolution_engine()
+    
+    def _get_music_generator(self):
+        """Lazy load music generator."""
+        if self._music_gen is None:
+            try:
+                from tools.music import get_music_generator, AcousticTokenGenerator
+                self._music_gen = get_music_generator()
+                self._acoustic_gen = AcousticTokenGenerator()
+            except Exception as e:
+                logger.warning(f"Music generator not available: {e}")
+        return self._music_gen
+    
+    def _get_pfc(self):
+        """Lazy load PFC."""
+        if self._pfc is None:
+            self._pfc = get_prefrontal_cortex()
+        return self._pfc
+    
+    def _get_insight_bridge(self):
+        """Lazy load insight bridge."""
+        if self._insight_bridge is None:
+            try:
+                from core.insight_bridge import get_insight_bridge
+                self._insight_bridge = get_insight_bridge()
+            except Exception as e:
+                logger.debug(f"Insight bridge init failed: {e}")
+        return self._insight_bridge
+    
+    def _get_knowledge_graph(self):
+        """Lazy load knowledge graph."""
+        if self._knowledge_graph is None:
+            try:
+                from core.knowledge_graph import get_knowledge_graph
+                self._knowledge_graph = get_knowledge_graph()
+            except Exception as e:
+                logger.debug(f"Knowledge graph init failed: {e}")
+        return self._knowledge_graph
+
+    def _get_music_learning(self):
+        """Lazy load music learning system."""
+        if self._music_learning is None:
+            try:
+                from core.music_learning import get_music_learning
+                self._music_learning = get_music_learning()
+                # Connect to evolution engine
+                if self._evolution_engine:
+                    self._music_learning.set_evolution_engine(self._evolution_engine)
+                # Connect to knowledge graph
+                if self._knowledge_graph:
+                    self._music_learning.set_knowledge_graph(self._knowledge_graph)
+            except Exception as e:
+                logger.warning(f"Music learning not available: {e}")
+        return self._music_learning
+    
+    def _load_state(self) -> None:
+        """Load saved compositions, themes, and insights."""
+        state_file = self.storage_path / "music_state.json"
+        if state_file.exists():
+            try:
+                data = read_json_with_integrity(state_file)
+                self._counter = data.get("counter", 0)
+                    
+                # Load stats
+                stats_data = data.get("stats", {})
+                self._compositions_created = stats_data.get("compositions_created", 0)
+                self._tokens_observed = stats_data.get("tokens_observed", 0)
+                    
+                # Load themes
+                for theme_data in data.get("themes", [])[-self.MAX_THEMES:]:
+                    try:
+                        theme = Theme(
+                            id=theme_data["id"],
+                            notes=theme_data["notes"],
+                            rhythm=theme_data["rhythm"],
+                            key=theme_data["key"],
+                            style=CompositionalStyle(theme_data["style"]),
+                            character=EmotionalCharacter(theme_data["character"]),
+                            variations=theme_data.get("variations", []),
+                            usage_count=theme_data.get("usage_count", 0),
+                        )
+                        self.themes[theme.id] = theme
+                    except Exception as e:
+                        logger.debug(f"Theme load failed: {e}")
+                    
+                # Load recent compositions summary (for display)
+                for comp_data in data.get("compositions", [])[-100:]:
+                    try:
+                        from datetime import datetime
+                        comp = Composition(
+                            id=comp_data["id"],
+                            title=comp_data.get("title", "Untitled"),
+                            style=CompositionalStyle(comp_data.get("style", "classical")),
+                            form=MusicalForm(comp_data.get("form", "sonata")),
+                            key=comp_data.get("key", "C_major"),
+                            tempo=comp_data.get("tempo", 120),
+                            character=EmotionalCharacter(comp_data.get("character", "peaceful")),
+                            sections=[],
+                            measures=[],
+                            themes=[],
+                            symbolic_tokens=[],
+                            acoustic_tokens=[],
+                            spectral_tokens=[],
+                        )
+                        comp.created_at = datetime.fromisoformat(comp_data.get("created_at", datetime.now().isoformat()))
+                        comp.observations = comp_data.get("observations", 0)
+                        self.compositions.append(comp)
+                    except Exception as e:
+                        logger.debug(f"Composition load failed: {e}")
+                    
+                logger.info(f"Loaded {len(self.themes)} themes, {len(self.compositions)} compositions from music state")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to load music state: {e}")
+        
+        # Also scan for compositions from wav files if not enough in state
+        if len(self.compositions) < 10:
+            self._scan_disk_compositions()
+    
+    def _scan_disk_compositions(self) -> None:
+        """Scan disk for composition wav files and add to list."""
+        try:
+            wav_files = sorted(
+                self.storage_path.glob("comp_*.wav"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True
+            )[:50]  # Last 50 files
+            
+            for wav_file in wav_files:
+                comp_id = wav_file.stem
+                # Check if already loaded
+                if any(c.id == comp_id for c in self.compositions):
+                    continue
+                
+                # Parse ID for counter
+                try:
+                    counter = int(comp_id.split('_')[1])
+                    if counter > self._counter:
+                        self._counter = counter
+                except (ValueError, IndexError):
+                    pass
+                
+                # Create minimal composition entry
+                from datetime import datetime
+                created = datetime.fromtimestamp(wav_file.stat().st_mtime)
+                
+                comp = Composition(
+                    id=comp_id,
+                    title=f"Composition {comp_id}",
+                    style=CompositionalStyle("classical"),
+                    form=MusicalForm("sonata"),
+                    key="C_major",
+                    tempo=120,
+                    character=EmotionalCharacter("peaceful"),
+                    sections=[],
+                    measures=[],
+                    themes=[],
+                    symbolic_tokens=[],
+                    acoustic_tokens=[],
+                    spectral_tokens=[],
+                )
+                comp.created_at = created
+                self.compositions.append(comp)
+            
+            logger.info(f"Scanned {len(wav_files)} composition files from disk")
+            
+        except Exception as e:
+            logger.warning(f"Failed to scan disk compositions: {e}")
+    
+    def _save_state(self) -> None:
+        """Persist composition state."""
+        try:
+            state_file = self.storage_path / "music_state.json"
+            
+            # Save themes
+            themes_data = [
+                {
+                    "id": t.id,
+                    "notes": t.notes,
+                    "rhythm": t.rhythm,
+                    "key": t.key,
+                    "style": t.style.value,
+                    "character": t.character.value,
+                    "variations": t.variations,
+                    "usage_count": t.usage_count,
+                }
+                for t in list(self.themes.values())[-self.MAX_THEMES:]
+            ]
+            
+            # Save composition summaries
+            with self._lock:
+                comps_to_save = list(self.compositions[-100:])
+            compositions_data = [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "style": c.style.value,
+                    "form": c.form.value,
+                    "key": c.key,
+                    "created_at": c.created_at.isoformat(),
+                    "observations": c.observations,
+                }
+                for c in comps_to_save
+            ]
+            
+            atomic_write_json(state_file, {
+                    "counter": self._counter,
+                    "themes": themes_data,
+                    "compositions": compositions_data,
+                    "stats": {
+                        "compositions_created": self._compositions_created,
+                        "tokens_observed": self._tokens_observed,
+                    }
+                })
+                
+        except Exception as e:
+            logger.warning(f"Failed to save music state: {e}")
+    
+    def _enforce_storage_limit(self) -> None:
+        """Enforce rolling storage limit by removing oldest compositions."""
+        try:
+            max_bytes = self.MAX_STORAGE_GB * 1024 * 1024 * 1024
+            
+            # Get all wav files sorted by modification time (oldest first)
+            wav_files = sorted(
+                self.storage_path.glob("comp_*.wav"),
+                key=lambda p: p.stat().st_mtime
+            )
+            
+            # Calculate current storage usage
+            total_size = sum(f.stat().st_size for f in wav_files if f.exists())
+            current_gb = total_size / (1024 * 1024 * 1024)
+            
+            if total_size > max_bytes or len(wav_files) > 500:  # Also limit file count
+                # Remove oldest files until under limit
+                removed = 0
+                removed_count = 0
+                for wav_file in wav_files:
+                    if total_size <= max_bytes and len(wav_files) - removed_count <= 500:
+                        break
+                    file_size = wav_file.stat().st_size
+                    wav_file.unlink()
+                    total_size -= file_size
+                    removed += file_size
+                    removed_count += 1
+                    
+                    # Also remove matching JSON state if exists
+                    json_file = wav_file.with_suffix('.json')
+                    if json_file.exists():
+                        json_file.unlink()
+                
+                if removed_count > 0:
+                    new_gb = total_size / (1024 * 1024 * 1024)
+                    logger.info(f"[MusicCreation] Storage cleanup: removed {removed_count} files, "
+                               f"freed {removed / (1024*1024):.1f}MB, now {new_gb:.2f}GB / {self.MAX_STORAGE_GB}GB")
+            else:
+                logger.debug(f"[MusicCreation] Storage at {current_gb:.2f}GB / {self.MAX_STORAGE_GB}GB")
+                
+        except Exception as e:
+            logger.warning(f"[MusicCreation] Storage cleanup failed: {e}")
+    
+    def _init_evolution_engine(self) -> None:
+        """Initialize the evolution engine."""
+        try:
+            self._evolution_engine = get_evolution_engine()
+            logger.info("Music evolution engine initialized")
+        except Exception as e:
+            logger.warning(f"Failed to init evolution engine: {e}")
+            self._evolution_engine = None
+    
+    def _evaluate_composition_fitness(self, composition: dict, tokens: list[dict], pfc_confidence: float = 0.0) -> float:
+        """Evaluate composition fitness using evolution engine.
+        
+        Args:
+            composition: Generated composition data
+            tokens: Symbolic/spectral tokens
+            pfc_confidence: Confidence from PFC prediction
+            
+        Returns:
+            Fitness score 0.0-1.0
+        """
+        if self._evolution_engine:
+            return self._evolution_engine.evaluate_fitness(
+                composition=composition,
+                tokens=tokens,
+                pfc_confidence=pfc_confidence
+            )
+        return 0.5  # Neutral fitness if no engine
+    
+    def _record_composition(self, composition: dict, fitness: float, tokens: list[dict], pfc_confidence: float = 0.0) -> str:
+        """Record composition in evolution engine for learning.
+        
+        Args:
+            composition: Generated composition
+            fitness: Fitness score
+            tokens: Symbolic/spectral tokens
+            pfc_confidence: PFC confidence
+            
+        Returns:
+            Composition ID
+        """
+        if self._evolution_engine:
+            return self._evolution_engine.record_composition(
+                composition=composition,
+                fitness=fitness,
+                tokens=tokens,
+                pfc_confidence=pfc_confidence
+            )
+        return ""
+    
+    def _get_evolved_style_params(self, pfc_prediction: dict | None = None) -> tuple:
+        """Get evolved style parameters for next composition.
+        
+        Args:
+            pfc_prediction: Optional PFC prediction for style guidance
+            
+        Returns:
+            Tuple of (style, params)
+        """
+        if self._evolution_engine:
+            return self._evolution_engine.get_recommended_style(pfc_prediction)
+        
+        # Default parameters
+        return "classical", StyleParameters()
+    
+    def get_evolution_statistics(self) -> dict:
+        """Get evolution statistics."""
+        if self._evolution_engine:
+            return self._evolution_engine.get_statistics()
+        return {"generation": 0, "total_compositions": 0, "best_fitness": 0}
+
+
+    async def start(self) -> None:
+        """Start continuous music creation."""
+        if self._running:
+            return
+        
+        self._running = True
+        self._task = create_tracked_task(self._creation_loop(), name="music_creation_loop")
+        logger.info("Music creation engine started - continuously composing")
+    
+    async def stop(self) -> None:
+        """Stop music creation."""
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        self._save_state()
+        logger.info("Music creation engine stopped")
+    
+    async def _creation_loop(self) -> None:
+        """Background loop that continuously creates music."""
+        while self._running:
+            try:
+                # Get evolved style parameters from learning
+                try:
+                    evolved_params = self._get_evolved_style_params()
+                except Exception as e:
+                    logger.warning(f"[MusicCreation] Evolution params failed, using defaults: {e}")
+                    evolved_params = ("classical", None)
+                
+                # Create a new composition using evolved parameters
+                composition = await self._create_composition(evolved_params)
+                
+                if composition:
+                    # Compute duration before clearing audio_data
+                    composition_duration = 60.0
+                    if hasattr(composition, 'audio_data') and composition.audio_data is not None:
+                        try:
+                            composition_duration = len(composition.audio_data) / composition.sample_rate
+                        except (TypeError, ZeroDivisionError):
+                            composition_duration = 60.0
+                    
+                    # Store composition for retrieval (without audio to save memory)
+                    with self._lock:
+                        # Clear audio_data from memory to prevent bloat
+                        if hasattr(composition, 'audio_data') and composition.audio_data is not None:
+                             composition.audio_data = None  # Audio is saved to disk, don't need in memory
+                        
+                        self.compositions.append(composition)
+                        if len(self.compositions) > self.MAX_COMPOSITIONS:
+                            # Remove oldest compositions to free memory
+                            old_comps = self.compositions[:-self.MAX_COMPOSITIONS]
+                            self.compositions = self.compositions[-self.MAX_COMPOSITIONS:]
+                            # Clear tokens from old compositions
+                            for old_comp in old_comps:
+                                if hasattr(old_comp, 'symbolic_tokens'):
+                                    old_comp.symbolic_tokens = []
+                                if hasattr(old_comp, 'spectral_tokens'):
+                                    old_comp.spectral_tokens = []
+                                if hasattr(old_comp, 'acoustic_tokens'):
+                                    old_comp.acoustic_tokens = []
+                                if hasattr(old_comp, 'measures'):
+                                    old_comp.measures = []
+                    
+                    # Evaluate fitness and record for learning
+                    pfc_confidence = 0.5  # Default confidence
+                    pfc = self._get_pfc()
+                    if pfc and pfc._running:
+                        # Get PFC prediction confidence
+                        try:
+                            pred = await pfc.predict_concept_trend("music_creation")
+                            pfc_confidence = pred.get("confidence", 0.5) if pred else 0.5
+                        except Exception as e:
+                            logger.debug(f"PFC prediction failed: {e}")
+                        await self._observe_composition(composition)
+                    
+                    # Evaluate composition fitness
+                    comp_data = {
+                        "style": composition.style.value,
+                        "key": composition.key,
+                        "tempo": composition.tempo,
+                        "form": composition.form.value,
+                        "duration": composition_duration,
+                        "harmony": [],  # Could extract from measures if available
+                        "notes": composition.measures if composition.measures else [],
+                    }
+                    
+                    # Evaluate and record in evolution engine
+                    fitness = self._evaluate_composition_fitness(
+                        composition=comp_data,
+                        tokens=composition.symbolic_tokens + composition.spectral_tokens,
+                        pfc_confidence=pfc_confidence
+                    )
+                    
+                    # Record composition for future learning
+                    self._record_composition(
+                        composition=comp_data,
+                        fitness=fitness,
+                        tokens=composition.symbolic_tokens + composition.spectral_tokens,
+                        pfc_confidence=pfc_confidence
+                    )
+                    
+                    # Store fitness in composition object for reference
+                    composition.fitness = fitness
+                    
+                    # Generate insight (occasionally)
+                    await self._generate_insight(composition)
+                    
+                    # Increment generation counter every 10 compositions
+                    if self._compositions_created > 0 and self._compositions_created % 10 == 0:
+                        if self._evolution_engine:
+                            self._evolution_engine.generation += 1
+                            logger.info(f"[MusicCreation] Evolution generation {self._evolution_engine.generation}")
+                    
+                    self._compositions_created += 1
+                    self._last_creation = datetime.now()
+                    logger.info(f"[MusicCreation] Created {composition.id}: {composition.title} (fitness={fitness:.2f})")
+                    
+                    # Save state periodically
+                    if self._compositions_created % 5 == 0:
+                        self._save_state()
+                
+                # Wait before next composition
+                # Add spontaneity to interval
+                interval = self.creation_interval
+                if random.random() < self.SPONTANEITY_CONFIG["surprise_probability"]:
+                    # Sometimes create faster or slower
+                    interval *= random.uniform(0.5, 2.0)
+                    logger.info(f"[MusicCreation] Spontaneous interval adjustment: {interval:.0f}s")
+                
+                await asyncio.sleep(interval)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Music creation error: {e}", exc_info=True)
+                await asyncio.sleep(30)  # Back off on error
+    
+    async def _create_composition(self, evolved_params: tuple | None = None) -> Composition | None:
+        """Create a new composition using MusicGen with perception-based refinement.
+        
+        This method now:
+        1. Gets LCM concept guidance for structure
+        2. Generates initial composition
+        3. "Hears" it with perception engine
+        4. Evaluates quality 
+        5. Can refine if below threshold
+        6. Learns from success/failure
+        
+        Args:
+            evolved_params: Optional tuple of (style_name, StyleParameters) from evolution
+        """
+        try:
+            # Use evolved parameters with variety enforcement
+            style_variety = random.random()
+            
+            # 50% chance to ignore evolved params for variety
+            if evolved_params and style_variety > 0.5:
+                style_name, params = evolved_params
+                style_map = {
+                    "baroque": CompositionalStyle.BAROQUE,
+                    "classical": CompositionalStyle.CLASSICAL,
+                    "romantic": CompositionalStyle.ROMANTIC,
+                    "modern": CompositionalStyle.MODERN,
+                }
+                style = style_map.get(style_name, CompositionalStyle.CLASSICAL)
+                logger.info(f"[MusicCreation] Using evolved style: {style_name} (from {params.total_compositions} compositions)")
+                self._current_style = style.value
+            else:
+                # Choose style with spontaneity for variety (50% of time)
+                style = self._choose_style()
+                logger.info(f"[MusicCreation] Using spontaneous style: {style.value}")
+            
+            self._current_style = style.value
+            
+            # Choose form based on style
+            form = self._choose_form(style)
+            
+            # Choose key with modulation possibility
+            key = self._choose_key(style)
+            
+            # Choose emotional character
+            character = self._choose_character(style)
+            
+            # Choose tempo
+            tempo = self._choose_tempo(style, character)
+            
+            # === LCM CONCEPT GUIDANCE ===
+            # Get concept predictions from LCM
+            music_lcm = get_music_lcm()
+            
+            # Initial concept prediction for the composition structure
+            lcm_guidance = music_lcm.get_next_concept_suggestion(
+                current_position=0.0,  # Start of composition
+                form=form.value,
+                style=style.value,
+                current_concepts=[]  # No previous concepts yet
+            )
+            
+            logger.info(f"[MusicCreation] LCM guidance: {lcm_guidance.get('concept', 'unknown')} "
+                       f"(confidence: {lcm_guidance.get('confidence', 0.5):.2f})")
+            
+            # Apply LCM guidance to composition parameters
+            _lcm_tension = lcm_guidance.get('tension_target', 0.5)
+            
+            # === END LCM GUIDANCE ===
+            
+            # Try symbolic composition first for REAL music
+            composition_data = await self._generate_with_symbolic(style, form, key, character.value, tempo)
+            
+            # MusicGen disabled - too resource intensive for background processing
+            # Uses lightweight symbolic composition instead
+            
+            if composition_data is None:
+                logger.warning("[MusicCreation] Symbolic composition failed")
+            
+            if composition_data is None:
+                logger.warning("[MusicCreation] All composition methods failed")
+                return None
+            
+            # "Hear" the composition with perception
+            audio = composition_data.get("audio_data")
+            sample_rate = composition_data.get("sample_rate", 32000)
+            
+            if audio is None:
+                logger.warning("[MusicCreation] No audio data")
+                with self._lock:
+                    comp_id = f"comp_{self._counter:05d}"
+                    self._counter += 1
+                return Composition(
+                    id=comp_id,
+                    title=composition_data.get("title", "Untitled"),
+                    style=style,
+                    form=form,
+                    key=key,
+                    tempo=tempo,
+                    character=character if isinstance(character, EmotionalCharacter) else EmotionalCharacter(character) if character in [e.value for e in EmotionalCharacter] else EmotionalCharacter.PEACEFUL,
+                    sections=composition_data.get("sections", []),
+                    measures=composition_data.get("measures", []),
+                    themes=composition_data.get("themes", []),
+                    symbolic_tokens=composition_data.get("symbolic_tokens", []),
+                    acoustic_tokens=composition_data.get("acoustic_tokens", []),
+                    spectral_tokens=composition_data.get("spectral_tokens", []),
+                )
+            
+            # Analyze with perception
+            from core.music_perception import get_music_perception
+            perception = get_music_perception()
+            
+            logger.info("[MusicCreation] Analyzing composition...")
+            features = perception.analyze_composition(
+                audio=audio,
+                sample_rate=sample_rate,
+                expected_form=form.value,
+                expected_key=key,
+                expected_tempo=tempo,
+            )
+            
+            feedback = perception.generate_feedback(
+                features=features,
+                expected_form=form.value,
+                expected_key=key,
+                expected_tempo=tempo,
+            )
+            
+            logger.info(f"[MusicCreation] Analysis: coherence={features.coherence_score:.2f}, "
+                       f"development={features.development_score:.2f}, "
+                       f"resolution={features.resolution_score:.2f}, "
+                       f"structure={features.structure_score:.2f}")
+            
+            logger.info(f"[MusicCreation] Overall score: {feedback.overall_score:.2f}")
+            if feedback.strengths:
+                logger.info(f"[MusicCreation] Strengths: {feedback.strengths}")
+            if feedback.weaknesses:
+                logger.info(f"[MusicCreation] Weaknesses: {feedback.weaknesses}")
+            
+            # === COMPOSITIONAL REASONING ===
+            # Generate WHY reasoning for this composition
+            reasoner = get_reasoner()
+            comp_reasoning = None
+            
+            try:
+                # Extract progressions from composition data
+                progressions = {}
+                sections = composition_data.get("sections", [])
+                for section in sections:
+                    section_name = section.get("name", "A")
+                    harmony = section.get("harmony", [])
+                    if harmony:
+                        progressions[section_name] = harmony
+                
+                # Get themes for reasoning
+                themes_used = composition_data.get("themes", [])
+                
+                # Get emotional character as string
+                emotional_char = character.value if hasattr(character, 'value') else str(character)
+                
+                # Generate complete reasoning
+                reasoning_obj = reasoner.generate_complete_reasoning(
+                    composition_id=f"comp_{self._counter:05d}",
+                    style=style.value,
+                    form=form.value,
+                    key=key,
+                    progressions=progressions if progressions else {"A": ["I", "IV", "V", "I"]},
+                    emotional_character=emotional_char,
+                    themes=themes_used if themes_used else ["primary_theme"]
+                )
+                
+                comp_reasoning = reasoning_obj.to_dict()
+                logger.info(f"[MusicCreation] Generated reasoning: key={reasoning_obj.key_reasoning.choice}, "
+                           f"form={reasoning_obj.form_reasoning.choice}")
+                logger.info(f"[MusicCreation] Artistic intent: {reasoning_obj.artistic_intent[:100]}...")
+            except Exception as e:
+                logger.debug(f"[MusicCreation] Reasoning generation failed: {e}")
+            
+            # === END COMPOSITIONAL REASONING ===
+            
+            # Apply learned techniques from master study
+            learning = self._get_music_learning()
+            if learning:
+                try:
+                    # Get recommended techniques for this style
+                    techniques = learning.get_recommended_techniques(style.value, form.value)
+                    if techniques:
+                        logger.info(f"[MusicCreation] Applying {len(techniques)} learned techniques from {techniques[0]['composer']}")
+                        # Store for reference
+                        composition_data["techniques_applied"] = [t["name"] for t in techniques[:3]]
+                except Exception as e:
+                    logger.debug(f"Could not apply learned techniques: {e}")
+            
+            # Record fitness
+            foundation = self.STYLE_PRACTICES.get(style, {}).get("foundation", [])
+            if isinstance(foundation, list):
+                foundation = foundation[0] if foundation else "classical"
+            self.COMPOSER_SIGNATURES.get(foundation if isinstance(foundation, str) else "bach", {})
+            
+            comp_data = {
+                "style": style.value,
+                "key": key,
+                "tempo": tempo,
+                "form": form.value,
+                "duration": len(audio) / sample_rate if hasattr(audio, '__len__') else 30.0,
+                "harmony": [],
+                "notes": composition_data.get("measures", []),
+            }
+            
+            pfc_confidence = feedback.overall_score
+            
+            fitness = self._evaluate_composition_fitness(
+                composition=comp_data,
+                tokens=composition_data.get("symbolic_tokens", []) + composition_data.get("spectral_tokens", []),
+                pfc_confidence=pfc_confidence,
+            )
+            
+            comp_id = self._record_composition(
+                composition=comp_data,
+                fitness=fitness,
+                tokens=composition_data.get("symbolic_tokens", []) + composition_data.get("spectral_tokens", []),
+                pfc_confidence=pfc_confidence,
+            )
+            
+            # Create composition object
+            with self._lock:
+                comp_id = f"comp_{self._counter:05d}"
+                self._counter += 1
+            
+            composition = Composition(
+                id=comp_id,
+                title=composition_data.get("title", f"{style.value.capitalize()} {form.value.replace('_', ' ').title()} in {key}"),
+                style=style,
+                form=form,
+                key=key,
+                tempo=tempo,
+                character=character if isinstance(character, EmotionalCharacter) else EmotionalCharacter(character) if character in [e.value for e in EmotionalCharacter] else EmotionalCharacter.PEACEFUL,
+                sections=composition_data.get("sections", []),
+                measures=composition_data.get("measures", []),
+                themes=composition_data.get("themes", []),
+                symbolic_tokens=composition_data.get("symbolic_tokens", []),
+                acoustic_tokens=composition_data.get("acoustic_tokens", []),
+                spectral_tokens=composition_data.get("spectral_tokens", []),
+                audio_data=audio,
+                sample_rate=sample_rate,
+                reasoning=comp_reasoning,
+            )
+            
+            composition.fitness = fitness
+            
+            logger.info(f"[MusicCreation] Created {composition.id}: {composition.title}")
+            logger.info(f"[MusicCreation] Perception score: {feedback.overall_score:.2f}, Fitness: {fitness:.2f}")
+            
+            # Save audio to disk
+            try:
+                import numpy as np
+                from scipy.io import wavfile
+                audio_path = self.storage_path / f"{composition.id}.wav"
+                audio_int16 = (audio * 32767).astype(np.int16)
+                wavfile.write(audio_path, sample_rate, audio_int16)
+                logger.info(f"[MusicCreation] Saved audio to {audio_path}")
+                
+                # Rolling storage cleanup
+                self._enforce_storage_limit()
+            except Exception as e:
+                logger.warning(f"[MusicCreation] Could not save audio: {e}")
+            
+            return composition
+            
+        except Exception as e:
+            logger.error(f"Composition creation failed: {e}")
+            return None
+    
+    async def _generate_with_llm(
+        self,
+        style: CompositionalStyle,
+        form: MusicalForm,
+        key: str,
+        character: str,
+        tempo: int
+    ) -> dict | None:
+        """Use LLM to generate a sophisticated musical composition."""
+        try:
+            # Get foundational composer influence
+            foundation = self.STYLE_PRACTICES.get(style, {}).get("foundation", [])
+            if isinstance(foundation, list):
+                foundation = foundation[0] if foundation else "classical"
+            
+            composer_info = self.COMPOSER_SIGNATURES.get(foundation if isinstance(foundation, str) else "bach", {})
+            composer_name = composer_info.get("name", "J.S. Bach")
+            
+            # Create prompt for music composition
+            prompt = f"""Compose a piece of music in the style of {composer_name}.
+
+Style: {style.value.capitalize()}
+Form: {form.value.replace('_', ' ').title()}
+Key: {key}
+Tempo: {tempo} BPM
+Character: {character}
+
+Create a detailed composition with:
+1. Clear melodic lines with specific pitches (e.g., C4, E4, G4, F4, D4)
+2. Harmony/Chord progressions (e.g., I-IV-V-I, ii-V-I, vi-IV-I-V)
+3. Dynamics and articulation markings (e.g., mf, p, crescendo)
+4. Structural sections appropriate for the form
+
+Output as JSON with this structure:
+{{
+  "title": "Descriptive title",
+  "measures": [
+    {{
+      "measure": 1,
+      "notes": [
+        {{"pitch": "C4", "duration": 1.0, "velocity": 80}},
+        {{"pitch": "E4", "duration": 1.0, "velocity": 75}}
+      ],
+      "harmony": "I",
+      "dynamics": "mf"
+    }}
+  ],
+  "chord_progression": ["I", "IV", "V", "I"],
+  "sections": ["A", "A'", "B", "A''"],
+  "description": "Brief description"
+}}
+
+Incorporate stylistic elements from {composer_name}:
+- {', '.join(composer_info.get('signatures', [])[:3])}
+
+Be creative yet follow classical music theory. Output ONLY valid JSON."""
+
+            # Call backend LLM for composition
+            from core.backend_llm import call_backend
+            response = await call_backend(
+                prompt,
+                system_prompt="You are a classical music composer. Output only valid JSON."
+            )
+            
+            if not response:
+                return None
+            
+            # Parse the response
+            import json
+            import re
+            
+            # Extract JSON from response
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                try:
+                    comp_json = json.loads(json_match.group())
+                    
+                    # Validate structure
+                    measures = comp_json.get("measures", [])
+                    if not measures or len(measures) < 4:
+                        return None
+                    
+                    # Generate audio from the measure data
+                    audio_data = await self._synthesize_measures(measures, style.value, tempo, key)
+                    
+                    return {
+                        "title": comp_json.get("title", f"{style.value.capitalize()} in {key}"),
+                        "measures": measures,
+                        "sections": comp_json.get("sections", []),
+                        "themes": comp_json.get("chord_progression", []),
+                        "symbolic_tokens": self._extract_symbolic_tokens(comp_json, style.value, form.value, key),
+                        "acoustic_tokens": audio_data.get("acoustic_tokens", []),
+                        "spectral_tokens": audio_data.get("spectral_tokens", []),
+                    }
+                except json.JSONDecodeError:
+                    logger.warning("[MusicCreation] Failed to parse LLM response as JSON")
+                    return None
+                    
+        except Exception as e:
+            logger.debug(f"[MusicCreation] LLM generation failed: {e}")
+            return None
+    
+    async def _synthesize_measures(
+        self,
+        measures: list[dict],
+        style: str,
+        tempo: int,
+        key: str
+    ) -> dict:
+        """Synthesize audio from measure data."""
+        try:
+            from tools.music import AcousticTokenGenerator
+            
+            gen = AcousticTokenGenerator()
+            
+            # Create composition dict for synthesis
+            composition = {"notes": measures}
+            
+            # Generate acoustic tokens
+            result = await gen.generate_acoustic_tokens(
+                composition,
+                style=style,
+                tempo=tempo,
+            )
+            
+            return {
+                "acoustic_tokens": result.get("acoustic_tokens", []),
+                "spectral_tokens": result.get("spectral_tokens", []),
+            }
+        except Exception as e:
+            logger.debug(f"[MusicCreation] Audio synthesis failed: {e}")
+            return {"acoustic_tokens": [], "spectral_tokens": []}
+    
+    def _extract_symbolic_tokens(
+        self,
+        comp_json: dict,
+        style: str,
+        form: str,
+        key: str
+    ) -> list[dict]:
+        """Extract symbolic tokens from composition for PFC observation."""
+        tokens = []
+        
+        # Style token
+        tokens.append({
+            "type": "style",
+            "content": {"style": style, "period": self._get_period(style)},
+        })
+        
+        # Form token
+        tokens.append({
+            "type": "form",
+            "content": {"form": form, "sections": comp_json.get("sections", [])},
+        })
+        
+        # Harmony progression tokens
+        progression = comp_json.get("chord_progression", [])
+        if progression:
+            tokens.append({
+                "type": "harmony",
+                "content": {"progression": progression, "key": key},
+            })
+        
+        # Structure tokens for each measure
+        for i, measure in enumerate(comp_json.get("measures", [])[:20]):  # First 20 measures
+            tokens.append({
+                "type": "measure",
+                "content": {
+                    "measure": measure.get("measure", i + 1),
+                    "harmony": measure.get("harmony", "I"),
+                    "notes": len(measure.get("notes", [])),
+                    "dynamics": measure.get("dynamics", "mf"),
+                }
+            })
+        
+        return tokens
+    
+
+    def _create_coherent_musicgen_prompt(
+        self,
+        style: CompositionalStyle,
+        form: MusicalForm,
+        key: str,
+        character: str,
+        composer_name: str
+    ) -> str:
+        """Create a detailed MusicGen prompt for better musical variety.
+        
+        MusicGen needs specific guidance to avoid staying in narrow ranges.
+        Include: pitch range, dynamics, articulation, thematic development.
+        """
+        # Key name formatting
+        key_name = key.replace("_", " ")
+        
+        # Style-specific vocabulary and pitch ranges
+        style_config = {
+            "baroque": {
+                "instruments": "harpsichord or organ",
+                "range": "wide register spanning bass to soprano",
+                "texture": "contrapuntal with multiple voices entering at different pitches",
+                "ornamentation": "trills, mordents, and ornamented passages",
+                "dynamics": "terraced dynamics from soft to loud",
+                "examples": "Johann Sebastian Bach, Handel, Scarlatti",
+            },
+            "classical": {
+                "instruments": "piano or fortepiano",
+                "range": "full keyboard range from low bass to high treble",
+                "texture": "melody with accompaniment, clear phrases",
+                "ornamentation": "grace notes, turns, brief flourishes",
+                "dynamics": "dynamic contrasts from pianissimo to fortissimo",
+                "examples": "Mozart, Haydn, early Beethoven",
+            },
+            "romantic": {
+                "instruments": "piano",
+                "range": "extended range using extreme high and low registers",
+                "texture": "rich harmonies, arpeggiated accompaniment",
+                "ornamentation": "rubato, chromatic embellishments",
+                "dynamics": "expressive dynamics with swells and fades",
+                "examples": "Chopin, Liszt, Brahms, Schumann",
+            },
+            "modern": {
+                "instruments": "piano",
+                "range": "exploring all registers",
+                "texture": "varied textures",
+                "ornamentation": "modern techniques",
+                "dynamics": "dynamic variety",
+                "examples": "contemporary composers",
+            },
+        }
+        
+        # Form-specific structure guidance
+        form_guidance = {
+            "binary": "two contrasting sections AB, each repeated, exploring different register in each section",
+            "ternary": "three sections ABA with the middle section in a contrasting key and register",
+            "sonata": "sonata form with exposition in tonic and dominant, development modulating through multiple keys, recapitulation returning to tonic",
+            "rondo": "recurring main theme alternating with contrasting episodes in different keys",
+            "fugue": "fugal subject enters in one voice, then in other voices at different octaves, with episodes exploring remote keys",
+            "invention": "two-voice contrapuntal piece with subject in both high and low registers",
+            "prelude": "improvisatory introduction exploring harmonic progressions",
+            "nocturne": "lyrical melody in high register over wide-ranging arpeggiated accompaniment",
+            "theme_variations": "theme stated clearly, then variations exploring different textures, registers, and keys",
+        }
+        
+        # Character with specific musical implications
+        character_musical = {
+            "joyful": "upbeat tempo, major mode, bright high register, staccato articulation",
+            "melancholic": "slow tempo, minor mode, low register, legato with rubato",
+            "dramatic": "contrasting dynamics, sudden register shifts, intense low bass notes and high treble",
+            "peaceful": "gentle dynamics, mid-register, simple harmonies, flowing rhythm",
+            "heroic": "bold dynamics, full range from bass to treble, chordal texture",
+            "mysterious": "quiet dynamics, low register predominating, chromatic harmonies",
+            "playful": "light staccato, high register, quick tempo shifts",
+        }
+        
+        config = style_config.get(style.value, style_config["classical"])
+        form_text = form_guidance.get(form.value, f"{form.value} form")
+        char_text = character_musical.get(character, "expressive dynamics")
+        
+        # Build comprehensive prompt
+        prompt_parts = [
+            f"{config['examples'].split(',')[0].strip()} style {config['instruments']} music",
+            f"{form_text}",
+            f"in {key_name}",
+            f"{char_text}",
+            f"explore {config['range']}, using both low bass and high treble registers",
+            f"{config['texture']}",
+        ]
+        
+        # Add ornamentation for baroque
+        if style.value == "baroque":
+            prompt_parts.append(f"with {config['ornamentation']}")
+        
+        # Add form-specific variety
+        if form.value in ["sonata", "theme_variations"]:
+            prompt_parts.append("modulate through multiple keys with clear thematic development")
+        elif form.value == "fugue":
+            prompt_parts.append("subject enters in different octaves, episodes modulate to remote keys")
+        elif form.value == "rondo":
+            prompt_parts.append("main theme returns in original key, episodes explore contrasting keys")
+        
+        prompt_parts.append("natural phrasing with clear cadences")
+        
+        return ", ".join(prompt_parts)
+
+
+    def _get_period(self, style: str) -> str:
+        """Get musical period from style."""
+        periods = {
+            "baroque": "1600-1750",
+            "classical": "1750-1820",
+            "romantic": "1820-1900",
+            "modern": "1900-present",
+        }
+        return periods.get(style, "unknown")
+
+    async def _generate_with_musicgen(
+        self,
+        style: CompositionalStyle,
+        form: MusicalForm,
+        key: str,
+        character: str,
+        tempo: int
+    ) -> dict | None:
+        """Generate music using MusicGen transformer model for highest quality.
+        
+        Uses coherent, intent-based prompts for musical coherence.
+        """
+        try:
+            from tools.music_gen import get_musicgen, generate_music_with_model
+            
+            gen = get_musicgen()
+            if not gen.is_available():
+                logger.debug("[MusicCreation] MusicGen not available, using fallback")
+                return None
+            
+            # Get foundational composer influence
+            foundation = self.STYLE_PRACTICES.get(style, {}).get("foundation", [])
+            if isinstance(foundation, list):
+                foundation = foundation[0] if foundation else "classical"
+            
+            composer_info = self.COMPOSER_SIGNATURES.get(foundation if isinstance(foundation, str) else "bach", {})
+            composer_name = composer_info.get("name", "J.S. Bach")
+            
+            # Use coherent prompt focused on musical intent
+            prompt = self._create_coherent_musicgen_prompt(
+                style=style,
+                form=form,
+                key=key,
+                character=character,
+                composer_name=composer_name
+            )
+            
+            logger.info(f"[MusicCreation] Generating with MusicGen: {prompt}")
+            
+            # Duration based on form - longer pieces for proper classical standards
+            # MusicGen supports multi-segment for longer pieces
+            form_durations = {
+                'sonata': 180.0,      # 3 minutes
+                'rondo': 120.0,       # 2 minutes  
+                'theme_variations': 150.0,  # 2.5 minutes
+                'fugue': 90.0,        # 1.5 minutes
+                'nocturne': 75.0,     # 1.25 minutes
+                'prelude': 60.0,      # 1 minute
+                'binary': 45.0,
+                'ternary': 60.0,
+                'invention': 48.0,
+            }
+            duration = form_durations.get(form.value, 60.0)
+            
+            # Generate audio with MusicGen
+            result = await generate_music_with_model(
+                prompt=prompt,
+                style=style.value,
+                duration=duration,
+            )
+            
+            if result is None:
+                logger.info("[MusicCreation] MusicGen failed, using synthesis fallback")
+                return None
+            
+            audio, sample_rate = result
+            
+            # Generate symbolic tokens for PFC observation
+            symbolic_tokens = [
+                {"type": "style", "content": {"style": style.value, "period": self._get_period(style.value)}},
+                {"type": "form", "content": {"form": form.value, "key": key}},
+                {"type": "tempo", "content": {"tempo": tempo, "character": character}},
+                {"type": "composer", "content": {"influence": composer_name, "signatures": composer_info.get("signatures", [])[:3]}},
+            ]
+            
+            # Extract spectral features from generated audio
+            spectral_tokens = self._extract_spectral_from_audio(audio, sample_rate, style.value)
+            
+            return {
+                "title": f"{style.value.capitalize()} {form.value.replace('_', ' ').title()} in {key}",
+                "measures": [],  # MusicGen generates audio directly, not symbolic measures
+                "sections": [form.value],
+                "themes": [],
+                "symbolic_tokens": symbolic_tokens,
+                "acoustic_tokens": [],
+                "spectral_tokens": spectral_tokens,
+                "audio_data": audio,
+                "sample_rate": sample_rate,
+            }
+            
+        except Exception as e:
+            logger.debug(f"[MusicCreation] MusicGen generation failed: {e}")
+            return None
+    
+    async def _create_with_perception(
+        self,
+        style: CompositionalStyle,
+        form: MusicalForm,
+        key: str,
+        character: str,
+        tempo: int
+    ) -> Composition | None:
+        """Create a composition with perception and refinement.
+        
+        This enables Jarvis to:
+        1. Generate initial composition
+        2. Analyze what he created (perception)
+        3. Evaluate quality (theory + standards)
+        4. Refine if needed (control + spontaneity)
+        5. Iterate until good enough
+        
+        The perfect balance:
+        - CONTROL: Theory rules, form structure, key
+        - SPONTANEITY: Random variation, creative twists
+        """
+        from core.music_perception import get_music_perception
+        
+        perception = get_music_perception()
+        
+        # Generate initial composition
+        composition_data = await self._generate_with_musicgen(style, form, key, character, tempo)
+        
+        if not composition_data:
+            logger.warning("[MusicCreation] Initial generation failed")
+            return None
+        
+        # "Hear" the composition
+        audio = composition_data.get("audio_data")
+        sample_rate = composition_data.get("sample_rate", 32000)
+        
+        if audio is None:
+            logger.warning("[MusicCreation] No audio data to analyze")
+            with self._lock:
+                comp_id = f"comp_{self._counter:05d}"
+                self._counter += 1
+            return Composition(
+                id=comp_id,
+                title=composition_data.get("title", "Untitled"),
+                style=style,
+                form=form,
+                key=key,
+                tempo=tempo,
+                character=character if isinstance(character, EmotionalCharacter) else EmotionalCharacter(character) if character in [e.value for e in EmotionalCharacter] else EmotionalCharacter.PEACEFUL,
+                sections=composition_data.get("sections", []),
+                measures=composition_data.get("measures", []),
+                themes=composition_data.get("themes", []),
+                symbolic_tokens=composition_data.get("symbolic_tokens", []),
+                acoustic_tokens=composition_data.get("acoustic_tokens", []),
+                spectral_tokens=composition_data.get("spectral_tokens", []),
+            )
+        
+        # Analyze what was created
+        logger.info("[MusicCreation] Analyzing generated composition...")
+        
+        features = perception.analyze_composition(
+            audio=audio,
+            sample_rate=sample_rate,
+            expected_form=form.value,
+            expected_key=key,
+            expected_tempo=tempo,
+        )
+        
+        # Generate feedback
+        feedback = perception.generate_feedback(
+            features=features,
+            expected_form=form.value,
+            expected_key=key,
+            expected_tempo=tempo,
+        )
+        
+        logger.info(f"[MusicCreation] Analysis: coherence={features.coherence_score:.2f}, "
+                   f"development={features.development_score:.2f}, "
+                   f"resolution={features.resolution_score:.2f}, "
+                   f"structure={features.structure_score:.2f}")
+        
+        logger.info(f"[MusicCreation] Overall score: {feedback.overall_score:.2f}")
+        if feedback.strengths:
+            logger.info(f"[MusicCreation] Strengths: {feedback.strengths}")
+        if feedback.weaknesses:
+            logger.info(f"[MusicCreation] Weaknesses: {feedback.weaknesses}")
+        
+        # === SELF-LEARNING INTEGRATION ===
+        # Analyze composition with self-learning system
+        self_learning = get_self_learning()
+        
+        composition_data_for_learning = {
+            "id": f"comp_{self._counter}",
+            "style": style.value,
+            "form": form.value,
+            "key": key,
+            "tempo": tempo,
+        }
+        
+        # Perceive and critique the composition
+        perception_features = {
+            "melodic_quality": getattr(features, 'melodic_range', None) and 0.6 or 0.5,
+            "harmonic_quality": features.coherence_score,
+            "rhythmic_quality": features.tempo_stability,
+            "structural_quality": features.structure_score,
+            "coherence_score": features.coherence_score,
+            "development_score": features.development_score,
+            "resolution_score": features.resolution_score,
+            "sections_detected": features.sections_detected,
+            "melodic_range": features.melodic_range,
+            "step_motion_ratio": 0.7,  # Default assumption
+            "rhythm_variety": features.dynamic_range,
+            "patterns": [],
+        }
+        
+        critique = self_learning.perceive(composition_data_for_learning, perception_features)
+        
+        logger.info(f"[SelfLearning] Critique: melody={critique.melody_score:.2f}, "
+                   f"harmony={critique.harmony_score:.2f}, "
+                   f"rhythm={critique.rhythm_score:.2f}, "
+                   f"form={critique.form_score:.2f}")
+        
+        # Get improvement suggestions
+        technique_suggestions = self_learning.suggest_improvements(critique)
+        
+        if technique_suggestions:
+            logger.info(f"[SelfLearning] Suggested techniques: {[t['technique'] for t in technique_suggestions[:3]]}")
+        
+        # Record for learning session if active
+        current_session = self_learning.current_session
+        if current_session:
+            self_learning.update_learning_progress(
+                score=critique.overall_score,
+                techniques_used=[t['technique'] for t in technique_suggestions]
+            )
+        
+        # Store successful patterns
+        if feedback.overall_score > 0.6:
+            self_learning.store_successful_pattern(
+                style=style.value,
+                pattern_type="melody",
+                pattern_data=composition_data.get("melody_pattern", {}),
+                score=feedback.overall_score
+            )
+        
+        # === END SELF-LEARNING ===
+        
+        # === COMPOSITIONAL REASONING ===
+        # Generate WHY reasoning for this composition
+        reasoner = get_reasoner()
+        comp_reasoning = None
+        
+        try:
+            # Extract progressions from composition data
+            progressions = {}
+            sections = composition_data.get("sections", [])
+            for section in sections:
+                section_name = section.get("name", "A")
+                harmony = section.get("harmony", [])
+                if harmony:
+                    progressions[section_name] = harmony
+            
+            # Get themes for reasoning
+            themes_used = composition_data.get("themes", [])
+            
+            # Get emotional character as string
+            emotional_char = character if isinstance(character, str) else str(character)
+            
+            # Generate complete reasoning
+            reasoning_obj = reasoner.generate_complete_reasoning(
+                composition_id=f"comp_{self._counter:05d}",
+                style=style.value,
+                form=form.value,
+                key=key,
+                progressions=progressions if progressions else {"A": ["I", "IV", "V", "I"]},
+                emotional_character=emotional_char,
+                themes=themes_used if themes_used else ["primary_theme"]
+            )
+            
+            comp_reasoning = reasoning_obj.to_dict()
+            logger.info(f"[MusicCreation] Generated reasoning: key={reasoning_obj.key_reasoning.choice}")
+        except Exception as e:
+            logger.debug(f"[MusicCreation] Reasoning generation failed: {e}")
+        
+        # === END COMPOSITIONAL REASONING ===
+        
+        # Record for fitness
+        comp_data = {
+            "style": style.value,
+            "key": key,
+            "tempo": tempo,
+            "form": form.value,
+            "duration": len(audio) / sample_rate if hasattr(audio, '__len__') else 30.0,
+            "harmony": [],
+            "notes": composition_data.get("measures", []),
+        }
+        
+        pfc_confidence = feedback.overall_score
+        
+        fitness = self._evaluate_composition_fitness(
+            composition=comp_data,
+            tokens=composition_data.get("symbolic_tokens", []) + composition_data.get("spectral_tokens", []),
+            pfc_confidence=pfc_confidence,
+        )
+        
+        comp_id = self._record_composition(
+            composition=comp_data,
+            fitness=fitness,
+            tokens=composition_data.get("symbolic_tokens", []) + composition_data.get("spectral_tokens", []),
+            pfc_confidence=pfc_confidence,
+        )
+        
+        # Create composition object
+        with self._lock:
+            comp_id = f"comp_{self._counter:05d}"
+            self._counter += 1
+        
+        composition = Composition(
+            id=comp_id,
+            title=composition_data.get("title", f"{style.value.capitalize()} {form.value.replace('_', ' ').title()} in {key}"),
+            style=style,
+            form=form,
+             key=key,
+             tempo=tempo,
+             character=character if isinstance(character, EmotionalCharacter) else EmotionalCharacter(character) if character in [e.value for e in EmotionalCharacter] else EmotionalCharacter.PEACEFUL,
+             sections=composition_data.get("sections", []),
+             measures=composition_data.get("measures", []),
+            themes=composition_data.get("themes", []),
+            symbolic_tokens=composition_data.get("symbolic_tokens", []),
+            acoustic_tokens=composition_data.get("acoustic_tokens", []),
+            spectral_tokens=composition_data.get("spectral_tokens", []),
+            audio_data=audio,
+            sample_rate=sample_rate,
+            reasoning=comp_reasoning,
+        )
+        
+        composition.fitness = fitness
+        
+        # === LCM LEARNING ===
+        # Learn from this composition for future LCM predictions
+        try:
+            # Get MusicLCM instance
+            music_lcm = get_music_lcm()
+            
+            # Extract concepts from the composition
+            composition_data_with_reasoning = composition_data.copy()
+            if comp_reasoning:
+                composition_data_with_reasoning["reasoning"] = comp_reasoning
+            
+            lcm_concepts = music_lcm.encode_composition(
+                composition_data=composition_data_with_reasoning,
+                style=style.value,
+                form=form.value
+            )
+            
+            # Add final concept to sequence
+            final_concept = MusicalConcept(
+                id=f"end_concept_{comp_id}",
+                concept_type="peaceful_resolution" if features.resolution_score > 0.6 else "harmonic_tension",
+                context={"position": 1.0, "outcome": "success" if fitness > 0.5 else "needs_improvement"},
+                section_position=1.0,
+                tension_level=1.0 - features.resolution_score,
+                composition_id=comp_id,
+            )
+            lcm_concepts.append(final_concept)
+            
+            # Learn from composition result
+            music_lcm.learn_from_composition(
+                concepts=lcm_concepts,
+                quality_score=feedback.overall_score,
+                style=style.value
+            )
+            
+            logger.info(f"[MusicLCM] Learned {len(lcm_concepts)} concepts from composition "
+                       f"(quality: {feedback.overall_score:.2f})")
+            
+            # Store successful concept transition
+            if feedback.overall_score > 0.6:
+                # Record that this concept sequence led to success
+                concept_sequence_key = f"{style.value}_{form.value}"
+                if concept_sequence_key not in self._successful_concepts:
+                    self._successful_concepts[concept_sequence_key] = []
+                self._successful_concepts[concept_sequence_key].append({
+                    "concepts": [c.concept_type for c in lcm_concepts],
+                    "score": feedback.overall_score,
+                })
+                MAX_SUCCESSFUL_PER_KEY = 200
+                if len(self._successful_concepts[concept_sequence_key]) > MAX_SUCCESSFUL_PER_KEY:
+                    self._successful_concepts[concept_sequence_key] = self._successful_concepts[concept_sequence_key][-MAX_SUCCESSFUL_PER_KEY:]
+                MAX_SUCCESSFUL_KEYS = 100
+                if len(self._successful_concepts) > MAX_SUCCESSFUL_KEYS:
+                    oldest_keys = list(self._successful_concepts.keys())[:len(self._successful_concepts) - MAX_SUCCESSFUL_KEYS]
+                    for k in oldest_keys:
+                        del self._successful_concepts[k]
+                
+        except Exception as e:
+            logger.debug(f"LCM learning failed: {e}")
+        
+        # === END LCM LEARNING ===
+        
+        # Log what was created
+        logger.info(f"[MusicCreation] Created {composition.id}: {composition.title}")
+        logger.info(f"[MusicCreation] Perception score: {feedback.overall_score:.2f}, Fitness: {fitness:.2f}")
+        
+        return composition
+    def _extract_spectral_from_audio(
+        self,
+        audio: "np.ndarray",
+        sample_rate: int,
+        style: str
+    ) -> list[dict]:
+        """Extract rich spectral and musical features from MusicGen audio for PFC observation.
+        
+        Provides LCM with:
+        - Spectral features (centroid, bandwidth, flux, rolloff)
+        - Temporal features (attack, sustain, decay, release)
+        - Harmonic content (chroma, key estimation)
+        - Energy envelope (dynamics)
+        """
+        import numpy as np
+        
+        tokens = []
+        
+        # Divide into frames for analysis
+        frame_duration = 0.1  # 100ms frames
+        frame_samples = int(frame_duration * sample_rate)
+        num_frames = min(len(audio) // frame_samples, 30)  # Max 30 frames
+        
+        # Store previous frame for flux calculation
+        prev_magnitude = None
+        
+        for i in range(num_frames):
+            start = i * frame_samples
+            end = start + frame_samples
+            frame = audio[start:end]
+            
+            if len(frame) == 0:
+                continue
+            
+            # FFT for spectral features
+            fft = np.fft.rfft(frame)
+            magnitude = np.abs(fft)
+            frequencies = np.fft.rfftfreq(len(frame), 1.0 / sample_rate)
+            
+            # Spectral centroid (brightness)
+            centroid = np.sum(frequencies * magnitude) / (np.sum(magnitude) + 1e-10)
+            
+            # Spectral bandwidth (frequency spread)
+            bandwidth = np.sqrt(np.sum(((frequencies - centroid) ** 2) * magnitude) / (np.sum(magnitude) + 1e-10))
+            
+            # Spectral flux (change in spectrum - musical movement)
+            if prev_magnitude is not None:
+                # Pad/trim to match lengths
+                min_len = min(len(magnitude), len(prev_magnitude))
+                spectral_flux = float(np.sum((magnitude[:min_len] - prev_magnitude[:min_len]) ** 2))
+            else:
+                spectral_flux = 0.0
+            
+            # Spectral rolloff (frequency below which 85% of energy lies)
+            cumulative_energy = np.cumsum(magnitude ** 2)
+            total_energy = cumulative_energy[-1]
+            rolloff_idx = np.searchsorted(cumulative_energy, 0.85 * total_energy)
+            rolloff_freq = frequencies[min(rolloff_idx, len(frequencies)-1)] if len(frequencies) > 0 else 0.0
+            
+            # RMS energy (loudness)
+            rms = np.sqrt(np.mean(frame ** 2))
+            
+            # Zero crossing rate (noisiness/texture)
+            zero_crossings = np.sum(np.abs(np.diff(np.sign(frame)))) / 2
+            zcr = zero_crossings / len(frame) if len(frame) > 0 else 0.0
+            
+            # Simple pitch estimation via autocorrelation
+            autocorr = np.correlate(frame, frame, mode='full')
+            autocorr = autocorr[len(autocorr)//2:]  # Take positive lags
+            # Find first peak (fundamental period estimate)
+            if len(autocorr) > 10:
+                peak_idx = np.argmax(autocorr[10:]) + 10
+                if peak_idx > 0 and peak_idx < len(frame):
+                    estimated_f0 = sample_rate / peak_idx
+                    # Map to nearest note
+                    note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+                    if estimated_f0 > 0 and estimated_f0 < 10000:
+                        midi_note = 12 * np.log2(estimated_f0 / 440.0) + 69
+                        note_idx = int(round(midi_note)) % 12
+                        estimated_note = note_names[note_idx]
+                    else:
+                        estimated_note = "?"
+                else:
+                    estimated_f0 = 0
+                    estimated_note = "?"
+            else:
+                estimated_f0 = 0
+                estimated_note = "?"
+            
+            tokens.append({
+                "type": "spectral_frame",
+                "content": {
+                    "frame": i,
+                    "timestamp_ms": int(i * frame_duration * 1000),
+                    # Spectral features
+                    "centroid_hz": float(centroid),
+                    "bandwidth_hz": float(bandwidth),
+                    "rolloff_hz": float(rolloff_freq),
+                    "flux": float(spectral_flux),
+                    # Temporal/energy features
+                    "rms_energy": float(rms),
+                    "zcr": float(zcr),
+                    # Pitch estimation
+                    "estimated_f0_hz": float(estimated_f0),
+                    "estimated_note": estimated_note,
+                    # Style context
+                    "style": style,
+                }
+            })
+            
+            prev_magnitude = magnitude
+        
+        return tokens
+
+    
+    def _choose_style(self, evolved_params: Any = None) -> CompositionalStyle:
+        """Choose style with weighted randomness and spontaneity.
+        
+        Uses evolved parameters if available, otherwise defaults.
+        """
+        # Use evolved parameters if available
+        if evolved_params and self._evolution_engine:
+            style_name, _ = self._evolution_engine.get_recommended_style()
+            style_map = {
+                "baroque": CompositionalStyle.BAROQUE,
+                "classical": CompositionalStyle.CLASSICAL,
+                "romantic": CompositionalStyle.ROMANTIC,
+                "modern": CompositionalStyle.MODERN,
+            }
+            if style_name.lower() in style_map:
+                # Spontaneity: sometimes override with surprise
+                if random.random() < self.SPONTANEITY_CONFIG["cross_style_pollination"]:
+                    return random.choice(list(CompositionalStyle))
+                return style_map[style_name.lower()]
+        
+        # Base weights (fallback)
+        weights = {
+            CompositionalStyle.BAROQUE: 0.25,
+            CompositionalStyle.CLASSICAL: 0.35,
+            CompositionalStyle.ROMANTIC: 0.30,
+            CompositionalStyle.MODERN: 0.10,
+        }
+        
+        # Spontaneity: cross-style pollination
+        if random.random() < self.SPONTANEITY_CONFIG["cross_style_pollination"]:
+            # Pick a different style than usual
+            available = list(CompositionalStyle)
+            return random.choice(available)
+        
+        return random.choices(
+            list(weights.keys()),
+            weights=list(weights.values())
+        )[0]
+    
+    def _choose_form(self, style: CompositionalStyle) -> MusicalForm:
+        """Choose form appropriate to style."""
+        practices = self.STYLE_PRACTICES.get(style, {})
+        common_forms = practices.get("common_forms", [MusicalForm.BINARY, MusicalForm.TERNARY])
+        
+        # Spontaneity: sometimes pick unexpected form
+        if random.random() < self.SPONTANEITY_CONFIG["form_deviation"]:
+            all_forms = list(MusicalForm)
+            return random.choice(all_forms)
+        
+        return random.choice(common_forms)
+    
+    def _choose_key(self, style: CompositionalStyle) -> str:
+        """Choose key with harmonic considerations and variety."""
+        # Major keys (brighter, more energetic, uplifting)
+        major_keys = ["C_major", "G_major", "D_major", "A_major", "E_major",
+                      "F_major", "Bb_major", "Eb_major", "F#_major", "Ab_major"]
+        # Minor keys (darker, more somber) - use sparingly
+        minor_keys = ["A_minor", "E_minor", "B_minor", "D_minor", "G_minor"]
+        
+        # Romantic music favors more distant keys
+        if style == CompositionalStyle.ROMANTIC:
+            major_keys.extend(["Db_major", "Gb_major"])
+        
+        # Favor major keys strongly for brighter, uplifting music
+        # Baroque: 85% major (bright, celebratory)
+        # Classical: 80% major (balanced, optimistic)
+        # Romantic: 70% major (still mostly bright, occasional minor for contrast)
+        # Modern: 75% major
+        if style == CompositionalStyle.BAROQUE:
+            major_bias = 0.85
+        elif style == CompositionalStyle.CLASSICAL:
+            major_bias = 0.80
+        elif style == CompositionalStyle.ROMANTIC:
+            major_bias = 0.70
+        else:
+            major_bias = 0.75
+        
+        if random.random() < major_bias:
+            return random.choice(major_keys)
+        else:
+            return random.choice(minor_keys)
+    
+    def _choose_character(self, style: CompositionalStyle) -> EmotionalCharacter:
+        """Choose emotional character appropriate to style - favor uplifting emotions."""
+        # Favor UPLIFTING characters: JOYFUL, PLAYFUL, HEROIC
+        # Reduce: MELANCHOLIC, MYSTERIOUS (subdued emotions)
+        # Order: JOYFUL, MELANCHOLIC, DRAMATIC, PEACEFUL, HEROIC, MYSTERIOUS, PLAYFUL
+        
+        if style == CompositionalStyle.BAROQUE:
+            # Baroque: joyful, majestic, playful - celebratory and uplifting
+            weights = [0.35, 0.10, 0.20, 0.15, 0.15, 0.02, 0.03]  # More joyful!
+        elif style == CompositionalStyle.CLASSICAL:
+            # Classical: balanced, bright and optimistic
+            weights = [0.30, 0.15, 0.25, 0.15, 0.10, 0.03, 0.02]  # More joyful!
+        elif style == CompositionalStyle.ROMANTIC:
+            # Romantic: dramatic but still mostly uplifting
+            weights = [0.20, 0.25, 0.20, 0.10, 0.15, 0.05, 0.05]  # Less melancholic!
+        else:
+            # Modern: full variety but favor brightness
+            weights = [0.25, 0.15, 0.20, 0.15, 0.15, 0.05, 0.05]
+        
+        return random.choices(list(EmotionalCharacter), weights=weights)[0]
+    
+    def _choose_duration(self, form: MusicalForm, character: EmotionalCharacter) -> float:
+        """Choose appropriate duration based on form and character.
+        
+        Classical forms have traditional durations:
+        - Binary/Ternary: 60-90s (short forms)
+        - Sonata: 120-180s (complex development)
+        - Rondo: 90-120s (repeating themes)
+        - Theme & Variations: 120-180s (varied length)
+        - Fugue: 90-150s (contrapuntal complexity)
+        - Invention: 45-75s (two-voice miniature)
+        - Prelude: 60-120s (free form)
+        - Nocturne: 90-150s (character piece)
+        """
+        # Base durations by form (in seconds)
+        form_durations = {
+            MusicalForm.BINARY: (60, 90),
+            MusicalForm.TERNARY: (60, 90),
+            MusicalForm.SONATA: (120, 180),
+            MusicalForm.RONDO: (90, 120),
+            MusicalForm.THEME_VARIATIONS: (120, 180),
+            MusicalForm.FUGUE: (90, 150),
+            MusicalForm.INVENTION: (45, 75),
+            MusicalForm.PRELUDE: (60, 120),
+            MusicalForm.NOCTURNE: (90, 150),
+        }
+        
+        min_dur, max_dur = form_durations.get(form, (60, 120))
+        
+        # Adjust for character
+        if character == EmotionalCharacter.DRAMATIC:
+            # Dramatic pieces tend to be longer
+            min_dur += 15
+            max_dur += 30
+        elif character == EmotionalCharacter.PEACEFUL:
+            # Peaceful pieces can be shorter
+            max_dur -= 15
+        elif character == EmotionalCharacter.HEROIC:
+            # Heroic pieces need more development
+            min_dur += 30
+        
+        # Add some randomness within range
+        return random.uniform(min_dur, max_dur)
+    
+    def _choose_tempo(self, style: CompositionalStyle, character: EmotionalCharacter) -> int:
+        """Choose tempo based on style and character."""
+        # Base tempo by style
+        base_tempos = {
+            CompositionalStyle.BAROQUE: (60, 90),    # Andante-Allegretto
+            CompositionalStyle.CLASSICAL: (90, 140), # Allegretto-Allegro
+            CompositionalStyle.ROMANTIC: (50, 120),  # Adagio-Allegro
+            CompositionalStyle.MODERN: (60, 160),    # Wide range
+        }
+        
+        # Character adjustments
+        character_multipliers = {
+            EmotionalCharacter.JOYFUL: 1.2,
+            EmotionalCharacter.MELANCHOLIC: 0.7,
+            EmotionalCharacter.DRAMATIC: 1.0,
+            EmotionalCharacter.PEACEFUL: 0.6,
+            EmotionalCharacter.HEROIC: 1.1,
+            EmotionalCharacter.MYSTERIOUS: 0.8,
+            EmotionalCharacter.PLAYFUL: 1.3,
+        }
+        
+        min_tempo, max_tempo = base_tempos.get(style, (80, 120))
+        mult = character_multipliers.get(character, 1.0)
+        
+        # Apply multiplier with bounds
+        tempo = random.randint(min_tempo, max_tempo)
+        tempo = int(tempo * mult)
+        tempo = max(40, min(200, tempo))  # Reasonable bounds
+        
+        return tempo
+    
+    def _choose_length(self, form: MusicalForm) -> int:
+        """Choose number of measures based on form."""
+        form_lengths = {
+            MusicalForm.BINARY: (8, 16),
+            MusicalForm.TERNARY: (16, 32),
+            MusicalForm.SONATA: (32, 64),
+            MusicalForm.RONDO: (24, 48),
+            MusicalForm.THEME_VARIATIONS: (24, 48),
+            MusicalForm.FUGUE: (20, 40),
+            MusicalForm.INVENTION: (12, 24),
+            MusicalForm.PRELUDE: (8, 24),
+            MusicalForm.NOCTURNE: (16, 32),
+        }
+        
+        min_len, max_len = form_lengths.get(form, (16, 32))
+        return random.randint(min_len, max_len)
+    
+    async def _observe_composition(self, composition: Composition) -> None:
+        """Have PFC observe both symbolic and acoustic tokens."""
+        pfc = self._get_pfc()
+        if not pfc or not pfc._running:
+            return
+        
+        observed = 0
+        
+        # Observe symbolic tokens (style, structure, harmony)
+        for token in composition.symbolic_tokens[:10]:  # First 10 symbolic
+            try:
+                content = token.get("content", token)
+                if isinstance(content, dict):
+                    content = json.dumps(content)
+                
+                await pfc.observe(
+                    content=str(content)[:300],
+                    concept_type=ConceptType.MUSIC_TOKEN,
+                    source="music_creation_symbolic",
+                    metadata={
+                        "composition_id": composition.id,
+                        "style": composition.style.value,
+                        "form": composition.form.value,
+                        "type": "symbolic",
+                    }
+                )
+                observed += 1
+            except Exception as e:
+                logger.debug(f"Symbolic token observation error: {e}")
+        
+        # Observe acoustic tokens (spectral features)
+        for token in composition.spectral_tokens[:20]:  # First 20 spectral
+            try:
+                content = token.get("content", token)
+                if isinstance(content, dict):
+                    content = json.dumps(content)
+                
+                await pfc.observe(
+                    content=str(content)[:400],
+                    concept_type=ConceptType.MUSIC_TOKEN,
+                    source="music_creation_acoustic",
+                    metadata={
+                        "composition_id": composition.id,
+                        "style": composition.style.value,
+                        "type": "spectral",
+                    }
+                )
+                observed += 1
+            except Exception as e:
+                logger.debug(f"Acoustic token observation error: {e}")
+        
+        composition.observations = observed
+        self._tokens_observed += observed
+        
+        logger.info(
+            f"[MusicCreation] PFC observed {observed} tokens from {composition.id} "
+            f"({composition.style.value} {composition.form.value})"
+        )
+    
+    async def _generate_insight(self, composition: Composition) -> None:
+        """Generate compositional insight and feed to insight bridge."""
+        # Only generate insight occasionally
+        if random.random() > 0.2:  # 20% chance
+            return
+        
+        try:
+            insight_type = random.choice([
+                "harmonic_progression",
+                "thematic_development",
+                "formal_structure",
+                "emotional_expression",
+                "stylistic_element",
+            ])
+            
+            # Generate insight content
+            if insight_type == "harmonic_progression":
+                content = f"Discovered effective {composition.style.value} harmonic motion: " \
+                         f"functional harmony in {composition.key} with proper voice leading"
+                evolution_guidance = {"harmonic_complexity": 0.05}
+            elif insight_type == "thematic_development":
+                content = f"Theme development in {composition.form.value} form: " \
+                         f"balanced repetition and variation maintains interest"
+                evolution_guidance = {"thematic_density": 0.02}
+            elif insight_type == "formal_structure":
+                content = f"{composition.form.value} form provides clear structural guidance " \
+                         f"for {composition.style.value} composition"
+                evolution_guidance = {"formal_clarity": 0.03}
+            elif insight_type == "emotional_expression":
+                content = f"{composition.character.value} character achieved through " \
+                         f"{composition.style.value} conventions at {composition.tempo} BPM"
+                evolution_guidance = {"expressive_range": 0.02}
+            else:
+                content = f"{composition.style.value} style effectively uses " \
+                         f"characteristic elements for {composition.key}"
+                evolution_guidance = {"style_authenticity": 0.02}
+            
+            # Create insight
+            insight = CompositionalInsight(
+                id=f"music_insight_{len(self.insights):05d}",
+                insight_type=insight_type,
+                content=content,
+                composition_id=composition.id,
+                evolution_guidance=evolution_guidance,
+            )
+            
+            # Store insight
+            with self._lock:
+                self.insights.append(insight)
+                if len(self.insights) > self.MAX_INSIGHTS:
+                    # Clear old insights completely to free memory
+                    old_insights = self.insights[:-self.MAX_INSIGHTS]
+                    self.insights = self.insights[-self.MAX_INSIGHTS:]
+                    # Clear content from old insights to help GC
+                    for old_insight in old_insights:
+                        if hasattr(old_insight, 'content'):
+                            old_insight.content = ""
+                        if hasattr(old_insight, 'evolution_guidance'):
+                            old_insight.evolution_guidance = {}
+            
+            composition.insight_generated = True
+            
+            # Feed to insight bridge if available
+            insight_bridge = self._get_insight_bridge()
+            if insight_bridge:
+                processed = insight_bridge.process_insight(
+                    raw_insight=content,
+                    source_problem=f"composition_{composition.id}",
+                    source_category="music_creation",
+                    strategy_used=insight_type,
+                    problem_solved=True,
+                )
+                if processed:
+                    logger.info(f"[MusicCreation] Insight: {content[:80]}...")
+                else:
+                    logger.debug(f"[MusicCreation] Insight filtered as trivial: {content[:50]}...")
+            
+            # Add to knowledge graph if available
+            kg = self._get_knowledge_graph()
+            if kg:
+                from core.knowledge_graph import NodeType
+                kg.add_node(
+                    content=content,
+                    node_type=NodeType.MUSICAL_INSIGHT,
+                    metadata={
+                        "composition_id": composition.id,
+                        "type": insight_type,
+                        "style": composition.style.value,
+                    }
+                )
+                
+        except Exception as e:
+            logger.debug(f"Insight generation error: {e}")
+    
+    def get_stats(self) -> dict:
+        """Get creation statistics."""
+        return {
+            "running": self._running,
+            "compositions_created": self._compositions_created,
+            "tokens_observed": self._tokens_observed,
+            "themes_stored": len(self.themes),
+            "insights_generated": len(self.insights),
+            "last_creation": self._last_creation.isoformat() if self._last_creation else None,
+            "creation_interval": self.creation_interval,
+            "current_style": self._current_composition.style.value if self._current_composition else None,
+        }
+    
+    def get_recent_compositions(self, limit: int = 10) -> list[dict]:
+        """Get recent compositions."""
+        result = []
+        with self._lock:
+            recent_comps = list(self.compositions[-limit:])
+        for c in recent_comps:
+            has_audio = False
+            # Check if MusicGen audio exists
+            if hasattr(c, 'audio_data') and c.audio_data is not None:
+                has_audio = True
+            # Check if symbolic measures exist for synthesis
+            elif c.measures and len(c.measures) > 0:
+                has_audio = True
+            
+            result.append({
+                "id": c.id,
+                "title": c.title,
+                "style": c.style.value,
+                "form": c.form.value,
+                "key": c.key,
+                "tempo": c.tempo,
+                "observations": c.observations,
+                "created_at": c.created_at.isoformat(),
+                "has_audio": has_audio,
+            })
+        return result
+
+
+
+    async def _generate_with_symbolic(
+        self,
+        style: CompositionalStyle,
+        form: MusicalForm,
+        key: str,
+        character: str,
+        tempo: int
+    ) -> dict | None:
+        """Generate composition using LLM-powered composer with musical intelligence.
+        
+        This uses the LLM to:
+        1. Plan composition structure and form
+        2. Generate meaningful melodies with development
+        3. Create coherent harmonies with functional understanding
+        4. Apply dynamics, articulation, phrasing
+        
+        Now enhanced with mathematical composition:
+        - Uses golden ratio for climax placement
+        - Fibonacci sequence for rhythm and melody
+        - Prime numbers for syncopation
+        - Fractal self-similarity for thematic development
+        """
+        try:
+            from core.llm_composer import compose_extended_piece
+            
+            # Occasionally use pure mathematical composition (10% of time)
+            use_math_composition = random.random() < 0.1
+            
+            # Also check if we should integrate mathematical motifs (40% of time)
+            integrate_math_motifs = random.random() < 0.4
+            
+            math_theme = None
+            math_integration = None
+            
+            if use_math_composition:
+                try:
+                    from core.math_music_integration import get_math_integration
+                    math_integration = get_math_integration()
+                    math_theme = math_integration.get_recommended_theme(style.value, character)
+                    logger.info(f"[MusicCreation] Using pure mathematical composition: {math_theme}")
+                    
+                    # Generate mathematical composition
+                    math_comp = math_integration.create_mathematical_composition(
+                        style=style.value,
+                        form=form.value,
+                        key=key,
+                        character=character,
+                        tempo=tempo
+                    )
+                    
+                    if math_comp:
+                        # Convert math composition to audio
+                        audio_result = await self._convert_math_composition_to_audio(
+                            math_comp, style, character, tempo
+                        )
+                        if audio_result:
+                            return audio_result
+                        
+                except Exception as e:
+                    logger.warning(f"[MusicCreation] Mathematical composition failed: {e}, falling back to LLM")
+            
+            logger.info(f"[MusicCreation] Composing {style.value} {form.value} in {key} (LLM-powered intelligent composition)")
+            
+            # Use LLM composer for intelligent composition
+            composition = compose_extended_piece(
+                style=style.value,
+                form=form.value,
+                key=key,
+                mood=character if character else 'peaceful',
+                tempo=tempo
+            )
+            
+            if not composition or not composition.get('phrases'):
+                logger.warning("[MusicCreation] LLM composer returned no phrases")
+                return None
+            
+            # Integrate mathematical motifs if selected
+            if integrate_math_motifs and math_integration is None:
+                try:
+                    from core.math_music_integration import get_math_integration
+                    math_integration = get_math_integration()
+                    
+                    # Choose mathematical theme based on style/character
+                    math_theme = math_integration.get_recommended_theme(style.value, character)
+                    
+                    composition = math_integration.integrate_with_llm_composer(
+                        composition, 
+                        math_theme
+                    )
+                    
+                    logger.info(f"[MusicCreation] Integrated {math_theme} mathematical motifs")
+                    
+                except Exception as e:
+                    logger.debug(f"[MathIntegration] Could not integrate motifs: {e}")
+            
+            # Get plan details
+            plan = composition.get('plan')
+            title = composition.get('title', f"{style.value.capitalize()} {form.value.capitalize()} in {key}")
+            
+            # Convert phrases to symbolic composer format
+            all_melody_notes = []
+            all_harmony_notes = []
+            all_bass_notes = []
+            
+            phrases = composition.get('phrases', [])
+            for phrase_data in phrases:
+                for note in phrase_data.get('melody_notes', []):
+                    all_melody_notes.append({
+                        'pitch': int(note.get('pitch', 60)),
+                        'duration': float(note.get('duration', 1.0)),
+                        'velocity': int(note.get('velocity', 80)),
+                        'start': float(note.get('beat', 0)),
+                        'articulation': note.get('articulation', 'legato')
+                    })
+                
+                for chord in phrase_data.get('harmony_notes', []):
+                    all_harmony_notes.append(chord)
+                
+                for note in phrase_data.get('bass_notes', []):
+                    all_bass_notes.append(note)
+            
+            logger.info(f"[MusicCreation] LLM composed {len(phrases)} phrases with {len(all_melody_notes)} melody notes")
+            
+            # Apply humanization to make music sound natural, not mechanical
+            try:
+                from core.midi_humanizer import apply_humanization_to_composition
+                phrases = apply_humanization_to_composition(phrases, style.value, tempo)
+                logger.info(f"[Humanizer] Applied {style.value} style humanization to {len(phrases)} phrases")
+            except Exception as e:
+                logger.debug(f"Humanizer not available: {e}")
+            
+            # Convert to audio using synthesis
+            try:
+                from core.symbolic_composer_v4 import midi_to_audio
+                from midiutil import MIDIFile
+                import io
+                
+                # Create MIDI from LLM composition
+                midi = MIDIFile(numTracks=3)
+                midi.addTrackName(0, 0, f"{title} - Melody")
+                midi.addTrackName(1, 0, f"{title} - Harmony")
+                midi.addTrackName(2, 0, f"{title} - Bass")
+                midi.addTempo(0, 0, tempo)
+                midi.addTempo(1, 0, tempo)
+                midi.addTempo(2, 0, tempo)
+                
+                # Add key signature to ensure correct perception
+                try:
+                    from midiutil.MidiFile import SHARPS, FLATS, MAJOR, MINOR
+                    
+                    key_parts = key.split("_")
+                    key_root = key_parts[0]  # C, G, D, A, E, F, Bb, Eb, etc.
+                    key_mode = key_parts[1] if len(key_parts) > 1 else "major"
+                    
+                    # MIDI key signature: number of sharps/flats (positive=sharps, negative=flats)
+                    # C major / A minor = 0
+                    major_keys = {"C": 0, "G": 1, "D": 2, "A": 3, "E": 4, "B": 5, "F#": 6, "Cb": -7, "F": -1, "Bb": -2, "Eb": -3, "Ab": -4, "Db": -5, "Gb": -6, "C#": 7}
+                    minor_keys = {"A": 0, "E": 1, "B": 2, "F#": 3, "C#": 4, "G#": 5, "D#": 6, "Ab": -4, "D": -1, "G": -2, "C": -3, "F": -4, "Bb": -5, "Eb": -6}
+                    
+                    if key_mode.lower() == "major":
+                        num_accidentals = major_keys.get(key_root, 0)
+                        mode_type = MAJOR
+                    else:
+                        num_accidentals = minor_keys.get(key_root, 0)
+                        mode_type = MINOR
+                    
+                    accidentals = abs(num_accidentals)
+                    accidental_type = SHARPS if num_accidentals >= 0 else FLATS
+                    
+                    # Add key signature to all tracks
+                    for track in range(3):
+                        midi.addKeySignature(track, 0, accidentals, accidental_type, mode_type)
+                except Exception as e:
+                    logger.debug(f"Could not add key signature: {e}")
+                
+                current_beat = 0.0
+                active_notes = {}  # Track active notes: (track, pitch) -> end_beat
+                
+                for phrase_data in phrases:
+                    melody_notes = phrase_data.get('melody_notes', [])
+                    for note in melody_notes:
+                        start = current_beat + float(note.get('beat', 0))
+                        dur = float(note['duration'])
+                        pitch = int(note['pitch'])
+                        note_key = (0, pitch)
+                        
+                        # If this note overlaps with an active note, end the previous note early
+                        if note_key in active_notes:
+                            prev_end = active_notes[note_key]
+                            if start < prev_end:
+                                start = prev_end
+                        
+                        midi.addNote(0, 0, pitch, start, dur, int(note.get('velocity', 80)))
+                        active_notes[note_key] = start + dur
+                    
+                    # Harmony track - sustained chord voicings in HIGHER register
+                    harmony_track = 1
+                    harmony_notes = phrase_data.get('harmony_notes', [])
+                    if harmony_notes:
+                        chord_roots = {
+                            'I': 0, 'i': 0, 'ii': 2, 'iii': 4, 'IV': 5, 'V': 7, 'vi': 9, 'VII': 11, 'vii': 11,
+                            'I6': 0, 'i6': 0, 'ii6': 2, 'iii6': 4, 'IV6': 5, 'V6': 7,
+                            'bII': 1, 'bIII': 3, 'bVII': 10, 'bVI': 8,
+                            'V7': 7, 'I7': 0, 'ii7': 2, 'IV7': 5, 'vi7': 9, 'vii7': 11,
+                        }
+                        
+                        for h in harmony_notes:
+                            chord_str = h.get('chord', 'I')
+                            chord_beat = float(h.get('beat', 0))
+                            chord_duration = float(h.get('duration', 4.0))
+                            
+                            is_seventh = '7' in chord_str
+                            is_minor = chord_str[0].islower() if chord_str else False
+                            is_diminished = '°' in chord_str
+                            is_augmented = '+' in chord_str
+                            
+                            chord_name = chord_str
+                            for suffix in ['°7', '°', '7', 'maj7', 'M7', 'm7', '/V', '/IV', '+', 'alt', 'b9', '#5']:
+                                chord_name = chord_name.replace(suffix, '')
+                            if chord_name.endswith('6'):
+                                chord_name = chord_name[:-1]
+                            chord_name = re.sub(r'_\d+$', '', chord_name)
+                            root = chord_roots.get(chord_name, 0)
+                            if root == 0 and chord_name not in chord_roots and chord_name != 'I' and chord_name != 'i':
+                                note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+                                for idx, name in enumerate(note_names):
+                                    if chord_name.startswith(name):
+                                        root = idx
+                                        break
+                            
+                            if is_diminished:
+                                intervals = [0, 3, 6]
+                            elif is_augmented:
+                                intervals = [0, 4, 8]
+                            elif is_minor:
+                                intervals = [0, 3, 7]
+                            else:
+                                intervals = [0, 4, 7]
+                            if is_seventh:
+                                intervals.append(10)
+                            
+                            base_octave = 6
+                            
+                            for i, interval in enumerate(intervals[:3]):
+                                pitch_class = (root + interval) % 12
+                                pitch = pitch_class + base_octave * 12
+                                pitch = max(67, min(91, pitch))
+                                vel = 45 if i == 0 else 35
+                                
+                                abs_start = current_beat + chord_beat
+                                abs_end = abs_start + chord_duration * 0.9
+                                harm_key = (1, pitch)
+                                if harm_key in active_notes and abs_start < active_notes[harm_key]:
+                                    abs_start = active_notes[harm_key]
+                                active_notes[harm_key] = abs_end
+                                actual_dur = abs_end - abs_start
+                                if actual_dur > 0.1:
+                                    midi.addNote(harmony_track, 0, pitch, abs_start, actual_dur, vel)
+
+                    # Bass track - sustained bass in LOW register (already correct)
+                    bass_notes = phrase_data.get('bass_notes', [])
+                    if bass_notes:
+                        for b in bass_notes:
+                            b_beat = float(b.get('beat', 0))
+                            b_duration = float(b.get('duration', 4.0))
+                            b_pitch = int(b.get('pitch', 48))
+                            b_pitch = max(36, min(60, b_pitch))
+                            
+                            abs_start = current_beat + b_beat
+                            abs_end = abs_start + b_duration
+                            bass_key = (2, b_pitch)
+                            if bass_key in active_notes and abs_start < active_notes[bass_key]:
+                                abs_start = active_notes[bass_key]
+                            active_notes[bass_key] = abs_end
+                            actual_dur = abs_end - abs_start
+                            if actual_dur > 0.1:
+                                midi.addNote(2, 0, b_pitch, abs_start, actual_dur, 55)
+                    
+                    current_beat += float(phrase_data.get("duration", 4.0))
+                
+                # Write MIDI
+                buffer = io.BytesIO()
+                midi.writeFile(buffer)
+                buffer.seek(0)
+                midi_bytes = buffer.read()
+                
+                # Convert to audio — try hybrid renderer first (FluidSynth+SoundFont)
+                try:
+                    from core.music_hybrid_renderer import get_hybrid_renderer
+                    hybrid = get_hybrid_renderer()
+                    composer_style = getattr(self, '_current_style', 'default')
+                    result = hybrid.render_midi_bytes(midi_bytes, composer=composer_style)
+                    audio, sr = result.audio, result.sample_rate
+                    logger.info(f"[MusicCreation] Hybrid render: {result.render_path.value}, {result.duration_seconds:.1f}s, {result.render_time_ms:.0f}ms")
+                except Exception as hybrid_err:
+                    logger.debug(f"[MusicCreation] Hybrid render unavailable, using synthesis: {hybrid_err}")
+                    audio, sr = midi_to_audio(midi_bytes)
+                
+                # Create composition object
+                with self._lock:
+                    composition_id = f"comp_{self._counter:05d}"
+                    self._counter += 1
+                
+                # Generate symbolic tokens
+                symbolic_tokens = composition.get('symbolic_tokens', [])
+                symbolic_tokens.insert(0, {
+                    'type': 'structure',
+                    'content': {
+                        'form': form.value,
+                        'phrases': len(phrases),
+                        'title': title
+                    }
+                })
+                symbolic_tokens.insert(1, {
+                    'type': 'tonality',
+                    'content': {
+                        'key': key,
+                        'mode': 'major' if 'major' in key.lower() else 'minor',
+                        'tempo': tempo
+                    }
+                })
+                
+                # Add LLM-planned elements
+                if plan:
+                    symbolic_tokens.append({
+                        'type': 'llm_plan',
+                        'content': {
+                            'emotional_arc': plan.emotional_arc.tolist() if hasattr(plan.emotional_arc, 'tolist') else plan.emotional_arc,
+                            'themes': [{'id': t.get('id', 'main'), 'character': t.get('character', 'lyrical')} for t in plan.themes]
+                        }
+                    })
+                
+                logger.info(f"[MusicCreation] Generated {len(symbolic_tokens)} symbolic tokens from LLM composition")
+                
+                # Save audio
+                audio_path = self.storage_path / f"{composition_id}.wav"
+                import numpy as np
+                from scipy.io import wavfile
+                audio_int16 = (audio * 32767).astype(np.int16)
+                wavfile.write(audio_path, sr, audio_int16)
+                logger.info(f"[MusicCreation] Saved audio to {audio_path}")
+                
+                # Rolling storage cleanup
+                self._enforce_storage_limit()
+                
+                return {
+                    'id': composition_id,
+                    'title': title,
+                    'audio_data': audio,
+                    'sample_rate': sr,
+                    'duration': len(audio) / sr,
+                    'symbolic_tokens': symbolic_tokens,
+                    'phrases': phrases,
+                    'key': key,
+                    'tempo': tempo,
+                    'style': style.value
+                }
+                
+            except Exception as e:
+                logger.error(f"[MusicCreation] Audio synthesis failed: {e}")
+                return None
+            
+        except Exception as e:
+            logger.error(f"[MusicCreation] LLM composition failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def _convert_math_composition_to_audio(
+        self,
+        math_comp: dict,
+        style: CompositionalStyle,
+        character: str,
+        tempo: int
+    ) -> dict | None:
+        """Convert mathematical composition to audio.
+        
+        Uses the LLM composer's audio synthesis but with mathematical structure.
+        """
+        try:
+            from core.symbolic_composer_v4 import midi_to_audio
+            from midiutil import MIDIFile
+            import io
+            
+            phrases = math_comp.get('phrases', [])
+            if not phrases:
+                return None
+            
+            with self._lock:
+                composition_id = f"comp_{self._counter:05d}"
+                self._counter += 1
+            
+            # Create MIDI from mathematical composition
+            midi = MIDIFile(numTracks=3)
+            midi.addTrackName(0, 0, "Math Composition - Melody")
+            midi.addTrackName(1, 0, "Math Composition - Harmony")
+            midi.addTrackName(2, 0, "Math Composition - Bass")
+            midi.addTempo(0, 0, tempo)
+            midi.addTempo(1, 0, tempo)
+            midi.addTempo(2, 0, tempo)
+            
+            current_beat = 0.0
+            active_notes = {}
+            
+            for phrase in phrases:
+                # Melody track
+                melody_notes = phrase.get('melody_notes', [])
+                for note in melody_notes:
+                    start = current_beat + float(note.get('beat', 0))
+                    dur = float(note['duration'])
+                    pitch = int(note['pitch'])
+                    note_key = (0, pitch)
+                    
+                    if note_key in active_notes:
+                        prev_end = active_notes[note_key][0]
+                        if start < prev_end:
+                            start = prev_end
+                    
+                    midi.addNote(0, 0, pitch, start, dur, note.get('velocity', 80))
+                    active_notes[note_key] = (start + dur, 0)
+                
+                # Harmony track - sustained chord voicings
+                harmony_notes = phrase.get('harmony_notes', [])
+                if harmony_notes:
+                    chord_roots = {
+                        'I': 0, 'i': 0, 'ii': 2, 'iii': 4, 'IV': 5, 'V': 7, 'vi': 9, 'VII': 11, 'vii': 11,
+                        'I6': 0, 'i6': 0, 'ii6': 2, 'iii6': 4, 'IV6': 5, 'V6': 7,
+                        'bII': 1, 'bIII': 3, 'bVII': 10, 'bVI': 8,
+                    }
+                    
+                    for h in harmony_notes:
+                        chord_str = h.get('chord', 'I')
+                        chord_beat = h.get('beat', 0)
+                        chord_duration = h.get('duration', 4.0)
+                        
+                        chord_name = chord_str.replace('°', '').replace('7', '').replace('/V', '').replace('6', '').replace('/4', '').replace('+', '')
+                        root = chord_roots.get(chord_name, 0)
+                        
+                        is_minor = chord_str[0].islower() if chord_str else False
+                        is_diminished = '°' in chord_str
+                        
+                        if is_diminished:
+                            intervals = [0, 3, 6]
+                        elif is_minor:
+                            intervals = [0, 3, 7]
+                        else:
+                            intervals = [0, 4, 7]
+                        
+                        # Spread voicing across octaves
+                        for i, interval in enumerate(intervals[:3]):
+                            pitch_class = (root + interval) % 12
+                            octave_offset = 1 if i > 1 else 0
+                            pitch = pitch_class + (3 + octave_offset) * 12  # Octave 3-4
+                            vel = 60 if i == 0 else 50
+                            midi.addNote(1, 0, pitch, current_beat + chord_beat, chord_duration, vel)
+                
+                # Bass track - sustained bass
+                bass_notes = phrase.get('bass_notes', [])
+                if bass_notes:
+                    for b in bass_notes:
+                        b_beat = float(b.get('beat', 0))
+                        b_duration = float(b.get('duration', 4.0))
+                        b_pitch = max(24, min(48, int(b.get('pitch', 36))))
+                        midi.addNote(2, 0, b_pitch, current_beat + b_beat, b_duration, 70)
+            
+                current_beat += float(phrase.get('duration', 4.0))
+            
+            # Write MIDI
+            buffer = io.BytesIO()
+            midi.writeFile(buffer)
+            buffer.seek(0)
+            midi_bytes = buffer.read()
+            
+            # Convert to audio — try hybrid renderer first (FluidSynth+SoundFont)
+            try:
+                from core.music_hybrid_renderer import get_hybrid_renderer
+                hybrid = get_hybrid_renderer()
+                result = hybrid.render_midi_bytes(midi_bytes, composer="default")
+                audio, sr = result.audio, result.sample_rate
+                logger.info(f"[MathCreation] Hybrid render: {result.render_path.value}, {result.duration_seconds:.1f}s")
+            except Exception as hybrid_err:
+                logger.debug(f"[MathCreation] Hybrid render unavailable, using synthesis: {hybrid_err}")
+                audio, sr = midi_to_audio(midi_bytes)
+            
+            # Generate symbolic tokens with mathematical metadata
+            symbolic_tokens = [
+                {
+                    'type': 'mathematical_structure',
+                    'content': {
+                        'theme': math_comp.get('mathematical_metadata', {}).get('generator', 'unknown'),
+                        'motif_id': math_comp.get('primary_motif', 'unknown'),
+                        'form': math_comp.get('form', 'mathematical_inspired'),
+                    }
+                },
+                {
+                    'type': 'golden_points',
+                    'content': math_comp.get('mathematical_integration', {}).get('golden_points', [])
+                },
+                {
+                    'type': 'tension_curve',
+                    'content': math_comp.get('mathematical_metadata', {}).get('tension_basis', 'fibonacci')
+                }
+            ]
+            
+            # Save audio
+            import numpy as np
+            from scipy.io import wavfile
+            audio_path = self.storage_path / f"{composition_id}.wav"
+            audio_int16 = (audio * 32767).astype(np.int16)
+            wavfile.write(audio_path, sr, audio_int16)
+            logger.info(f"[MathComposition] Saved mathematical composition to {audio_path}")
+            
+            # Rolling storage cleanup
+            self._enforce_storage_limit()
+            
+            return {
+                'id': composition_id,
+                'title': f"Mathematical {style.value.capitalize()} in {math_comp.get('key', 'C')}",
+                'audio_data': audio,
+                'sample_rate': sr,
+                'duration': len(audio) / sr,
+                'symbolic_tokens': symbolic_tokens,
+                'phrases': phrases,
+                'key': math_comp.get('key', 'C_major'),
+                'tempo': tempo,
+                'style': style.value,
+                'mathematical_beauty': math_comp.get('mathematical_beauty_score', 0.7)
+            }
+            
+        except Exception as e:
+            logger.error(f"[MathComposition] Audio conversion failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _practice_composition(self, composition: Composition) -> dict:
+        """Test composition against theory rules and learn from results."""
+        learning = self._get_music_learning()
+        if not learning:
+            return {"tested": False}
+        
+        # Get style
+        style = composition.style.value if hasattr(composition, 'style') else 'classical'
+        
+        # Test composition
+        test_result = learning.test_composition(
+            {"notes": [], "phrases": [], "key": composition.key},
+            style
+        )
+        
+        # Record practice result
+        session = learning.record_practice_result(
+            technique="composition",
+            composer=style.split('_')[0] if '_' in style else style,
+            composition={"id": composition.id, "style": style},
+            test_result=test_result
+        )
+        
+        logger.info(f"[MusicCreation] Practice session {session.id}: score={session.score:.2f}, violations={len(session.theory_violations)}")
+        
+        return {
+            "tested": True,
+            "score": test_result["score"],
+            "violations": test_result["violations"],
+            "suggestions": test_result["suggestions"],
+            "learned": session.learned,
+        }
+    
+    def _study_master_composer(self, composer: str) -> dict:
+        """Study techniques from a master composer."""
+        learning = self._get_music_learning()
+        if not learning:
+            return {"studied": False}
+        
+        result = learning.study_master(composer)
+        
+        # Log learned techniques
+        if "techniques" in result:
+            techniques = [t["name"] for t in result["techniques"][:3]]
+            logger.info(f"[MusicCreation] Studied {composer}: learned {', '.join(techniques)}")
+        
+        return result
+    
+    def get_learning_insights(self) -> dict:
+        """Get insights about music learning progress."""
+        learning = self._get_music_learning()
+        if not learning:
+            return {"error": "Learning system not initialized"}
+        
+        return learning.get_style_insights()
+
+
+
+# Singleton
+_music_creation_engine: MusicCreationEngine | None = None
+_lock = threading.Lock()
+
+
+def get_music_creation_engine() -> MusicCreationEngine:
+    """Get singleton music creation engine."""
+    global _music_creation_engine
+    if _music_creation_engine is None:
+        with _lock:
+            if _music_creation_engine is None:
+                _music_creation_engine = MusicCreationEngine()
+    return _music_creation_engine

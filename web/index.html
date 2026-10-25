@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jarvis</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+      window.addEventListener('DOMContentLoaded', function() {
+        if (window.mermaid) {
+          mermaid.initialize({ 
+            startOnLoad: false,
+            theme: 'dark',
+            themeVariables: {
+              primaryColor: '#7c3aed',
+              primaryTextColor: '#e5e5e7',
+              primaryBorderColor: '#7c3aed',
+              lineColor: '#6b6b70',
+              secondaryColor: '#1a1a1e',
+              tertiaryColor: '#141416',
+              background: '#0a0a0b',
+              mainBkg: '#141416',
+              nodeBorder: '#7c3aed',
+              clusterBkg: '#1a1a1e',
+              clusterBorder: '#6b6b70',
+              titleColor: '#e5e5e7',
+              edgeLabelBackground: '#141416'
+            },
+            flowchart: {
+              curve: 'basis',
+              padding: 20
+            }
+          });
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
