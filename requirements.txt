@@ -62,7 +62,7 @@ scipy>=1.10.0             # wavfile IO + filters in the music renderer, mel spec
 sentence-transformers>=2.2.0
 scikit-learn>=1.0.0
 transformers>=4.35.0
-peft>=0.10.0              # required by jina-embeddings-v5; without it the model
+peft>=0.21.2              # required by jina-embeddings-v5; without it the model
                           # fails to load and encode() degrades to ZERO VECTORS,
                           # silently making all semantic search meaningless
 
