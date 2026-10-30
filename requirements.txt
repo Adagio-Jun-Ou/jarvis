@@ -21,7 +21,7 @@ python-multipart>=0.0.6   # required by FastAPI Form(...) — /api/chat 500s wit
 aiofiles>=23.0.0          # async file IO in tools/base.py
 
 # System
-psutil>=5.9.0             # imported by 17 core modules (resource_monitor, hardware, ...)
+psutil>=7.2.2             # imported by 17 core modules (resource_monitor, hardware, ...)
 
 # Security Suite
 # (cryptography already listed above)
